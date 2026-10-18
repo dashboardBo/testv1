@@ -610,6 +610,7 @@
       </div>
 
       <div class="header-btns">
+        <button class="btn-action" id="btn-export" onclick="exportarExcel()" title="Exportar los datos que se están viendo a Excel" aria-label="Exportar a Excel">📥 Excel</button>
         <button class="btn-action btn-theme" id="btn-alertas" onclick="toggleAlertas()" title="Alertas sonoras y de voz" aria-label="Alertas sonoras">🔕 OFF</button>
         <button class="btn-action btn-theme" id="btn-full" onclick="toggleFullscreen()" title="Pantalla completa" aria-label="Pantalla completa">⛶</button>
         <button class="btn-action btn-theme" id="btn-theme" onclick="toggleTheme()" title="Cambiar Tema" aria-label="Cambiar tema">🌙</button>
@@ -2714,6 +2715,185 @@ $('cont-modal-filters').addEventListener('click', e => {
   CONT_MODAL.sev = b.dataset.s; renderModalCont();
 });
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && !$('cont-modal').hidden) cerrarContingencias(); });
+
+/* ==========================================================
+   EXPORTAR A EXCEL (según la fecha/periodo en pantalla)
+   ========================================================== */
+let _xlsxP = null;
+function cargarXLSX(){
+  if(window.XLSX) return Promise.resolve();
+  if(_xlsxP) return _xlsxP;
+  _xlsxP = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res;
+    s.onerror = () => { _xlsxP = null; rej(new Error('No se pudo cargar la librería de Excel')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxP;
+}
+function anchoCols(filas){
+  if(!filas.length) return [];
+  return Object.keys(filas[0]).map(k => ({
+    wch: Math.min(48, Math.max(String(k).length, ...filas.map(r => String(r[k] == null ? '' : r[k]).length)) + 2)
+  }));
+}
+async function exportarExcel(){
+  const btn = $('btn-export');
+  if(!estaciones.length){
+    avisoApi('⚠ No hay datos para exportar'); setTimeout(() => avisoApi(''), 3500); return;
+  }
+  const html0 = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '⏳ Generando…';
+  try{
+    await cargarXLSX();
+    if(mesPrevio === null) initMesEstaciones();
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fechaTxt = ymd(VISTA.fecha);
+    const fracEsp = Math.max(0.02, fracDiaActual());
+    const wb = XLSX.utils.book_new();
+    const addHoja = (nombre, filas) => {
+      const ws = XLSX.utils.json_to_sheet(filas.length ? filas : [{'Sin datos':''}]);
+      ws['!cols'] = anchoCols(filas.length ? filas : [{'Sin datos':''}]);
+      XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31));
+    };
+
+    /* --- Estaciones --- */
+    let recDia = 0, txDia = 0, totAyer = 0, sobreDia = 0, sobreMes = 0;
+    const filasEst = estaciones.map(st => {
+      const rD = recaudacionDia(st), tD = transaccionesDia(st);
+      const mD = metaEstacion(st, 'dia'), mM = metaEstacion(st, 'mes');
+      const rM = (st.mesPrevio || 0) + rD, tM = (st.mesPrevioTx || 0) + tD;
+      const cD = cumplimiento(st, 'dia'), cM = cumplimiento(st, 'mes');
+      recDia += rD; txDia += tD; totAyer += st.ayerBase || 0;
+      if(mD > 0 && rD / (mD * fracEsp) >= 1) sobreDia++;
+      if(cM >= 100) sobreMes++;
+      const f = {
+        'ID': st.id, 'Estación': st.nombre, 'Ruta': st.ruta, 'Sistema': st.sistema,
+        'Zona': st.zona, 'Carriles': st.carriles,
+        'Meta día (Bs)': r2(mD), 'Recaudación día (Bs)': r2(rD),
+        'Cumplimiento día al corte (%)': r2(cD),
+        'Recaudación ayer (Bs)': r2(st.ayerBase),
+        'Variación vs ayer (%)': st.ayerBase > 0 ? r2((rD / st.ayerBase - 1) * 100) : '',
+        'Transacciones día': tD,
+        'Meta mes (Bs)': r2(mM), 'Acumulado mes (Bs)': r2(rM),
+        'Cumplimiento mes al corte (%)': r2(cM), 'Transacciones mes': tM
+      };
+      TURNOS.forEach((t, i) => {
+        const x = st.turnos[i] || {recaudacion:0, transacciones:0};
+        f[t.id + ' Recaudación (Bs)'] = r2(x.recaudacion);
+        f[t.id + ' Transacciones'] = x.transacciones || 0;
+      });
+      f['Última actualización'] = st.ultimaAct ? st.ultimaAct.toLocaleString('es-BO') : '';
+      return f;
+    });
+
+    /* --- Resumen --- */
+    const M = calcMetas(recDia);
+    const dv = totAyer > 0 ? (recDia / totAyer - 1) * 100 : 0;
+    let vehMes;
+    if(typeof mesPrevioTx === 'number' && mesPrevioTx >= 0) vehMes = txDia + mesPrevioTx;
+    else if(Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) vehMes = txDia + mesPrevioCat.reduce((a,b)=>a+b, 0);
+    else vehMes = vehiculosMesPorCategoria(vehiculosDiaPorCategoria()).reduce((a,b)=>a+b, 0);
+    const cd = CONT.dia || {}, cp = CONT.mesPrev || {};
+    const n = v => Number(v) || 0;
+    const cDia = n(cd.crit) + n(cd.warn) + n(cd.info);
+    const cMes = cDia + n(cp.crit) + n(cp.warn) + n(cp.info);
+    const resumen = [
+      ['CONTROL DE PEAJE REGIONAL SANTA CRUZ'],
+      ['Fecha consultada', fechaTxt],
+      ['Vista', VISTA.actual ? 'Periodo actual (en curso)' : 'Histórico'],
+      ['Generado', new Date().toLocaleString('es-BO')],
+      [],
+      ['Indicador', 'Valor', 'Detalle'],
+      ['Recaudación del día (Bs)', r2(recDia), 'Meta diaria Bs ' + fmt(METAS.dia)],
+      ['Avance meta del día (%)', r2(METAS.dia > 0 ? recDia / METAS.dia * 100 : 0), ''],
+      ['Proyección cierre del día (Bs)', r2(M.proyDia), ''],
+      ['Acumulado del mes (Bs)', r2(M.recMes), 'Meta mensual Bs ' + fmt(METAS.mes)],
+      ['Avance meta del mes (%)', r2(METAS.mes > 0 ? M.recMes / METAS.mes * 100 : 0), ''],
+      ['Proyección cierre del mes (Bs)', r2(M.proyMes), ''],
+      ['Recaudación de ayer (Bs)', r2(totAyer), ''],
+      ['Variación vs ayer (%)', r2(dv), ''],
+      ['Estaciones en meta (día)', sobreDia, 'de ' + estaciones.length],
+      ['Estaciones en meta (mes)', sobreMes, 'de ' + estaciones.length],
+      ['Vehículos cobrados (día)', Math.round(txDia), ''],
+      ['Vehículos cobrados (mes)', Math.round(vehMes), ''],
+      ['Contingencias del día', cDia, 'Críticas ' + n(cd.crit) + ' · Advertencias ' + n(cd.warn) + ' · Regulares ' + n(cd.info)],
+      ['Contingencias del mes', cMes, 'Críticas ' + (n(cd.crit)+n(cp.crit)) + ' · Advertencias ' + (n(cd.warn)+n(cp.warn)) + ' · Regulares ' + (n(cd.info)+n(cp.info))]
+    ];
+    const wsR = XLSX.utils.aoa_to_sheet(resumen);
+    wsR['!cols'] = [{wch:34}, {wch:20}, {wch:52}];
+    XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
+
+    addHoja('Estaciones', filasEst);
+
+    /* --- Turnos --- */
+    const filasTurnos = TURNOS.map((t, i) => {
+      const dia = estaciones.reduce((a, st) => a + ((st.turnos[i] && st.turnos[i].recaudacion) || 0), 0);
+      const tx  = estaciones.reduce((a, st) => a + ((st.turnos[i] && st.turnos[i].transacciones) || 0), 0);
+      return {
+        'Turno': t.nombre, 'Horario': t.horario,
+        'Recaudación día (Bs)': r2(dia), 'Transacciones día': tx,
+        'Recaudación mes estimada (Bs)': r2(mesPrevio * TURNO_W[i] + dia)
+      };
+    });
+    addHoja('Turnos', filasTurnos);
+
+    /* --- Sistemas --- */
+    const filasSis = SISTEMAS.map(sys => {
+      let rD = 0, rM = 0, c = 0;
+      estaciones.forEach(st => { if(st.sistema === sys){ c++; const r = recaudacionDia(st); rD += r; rM += (st.mesPrevio || 0) + r; } });
+      return {'Sistema': sys, 'Estaciones': c, 'Recaudación día (Bs)': r2(rD), 'Acumulado mes (Bs)': r2(rM),
+              '% del día': recDia > 0 ? r2(rD / recDia * 100) : 0};
+    });
+    addHoja('Sistemas', filasSis);
+
+    /* --- Categorías --- */
+    const catDia = vehiculosDiaPorCategoria(), catMes = vehiculosMesPorCategoria(catDia);
+    const totCD = catDia.reduce((a,b)=>a+b, 0), totCM = catMes.reduce((a,b)=>a+b, 0);
+    addHoja('Categorías', CATEGORIAS.map((c, i) => ({
+      'Categoría': c.nombre, 'Vehículos día': Math.round(catDia[i]),
+      '% día': totCD > 0 ? r2(catDia[i] / totCD * 100) : 0,
+      'Vehículos mes': Math.round(catMes[i]),
+      '% mes': totCM > 0 ? r2(catMes[i] / totCM * 100) : 0
+    })));
+
+    /* --- Estación x categoría (día) --- */
+    addHoja('Estación x Categoría', estaciones.map(st => {
+      const f = {'Estación': st.nombre, 'Sistema': st.sistema};
+      CATEGORIAS.forEach((c, i) => {
+        f[c.nombre] = st.turnos.reduce((a, t) => a + (Number(t.categorias && t.categorias[i]) || 0), 0);
+      });
+      return f;
+    }));
+
+    /* --- Recaudación diaria (semana / mes) --- */
+    if(histDias){
+      const mapa = new Map();
+      histDias.dias.forEach(x => mapa.set(x.t, {t:x.t, rec:x.rec}));
+      mapa.set(histDias.hoy, {t:histDias.hoy, rec:recDia});
+      const filas = [...mapa.values()].sort((a, b) => a.t - b.t).map(x => {
+        const d = new Date(x.t);
+        return {'Fecha': ymd(d), 'Día': DIAS_SEM[dowLun(d)], 'Recaudación (Bs)': r2(x.rec),
+                '% de la meta diaria': METAS.dia > 0 ? r2(x.rec / METAS.dia * 100) : 0};
+      });
+      addHoja('Recaudación diaria', filas);
+    }
+
+    /* --- Contingencias del día --- */
+    addHoja('Contingencias', alertasDia.map(a => ({
+      'Fecha': fechaTxt, 'Hora': a.horaTxt, 'Estación': a.estacion, 'Sistema': a.sistema,
+      'Severidad': SEV_NOM[a.sev] || a.sev, 'Tipo': a.t, 'Mensaje': a.m
+    })));
+
+    XLSX.writeFile(wb, 'Peaje_Santa_Cruz_' + fechaTxt + '.xlsx');
+  }catch(e){
+    console.error('[Exportar]', e);
+    avisoApi('⚠ No se pudo generar el Excel: ' + (e && e.message ? e.message : 'error')); setTimeout(() => avisoApi(''), 5000);
+  }finally{
+    btn.disabled = false; btn.innerHTML = html0;
+  }
+}
 
 async function iniciarTablero(){
   if(!MODO_API){
