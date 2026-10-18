@@ -1383,15 +1383,18 @@ async function redVialDesdeSVG(){
       to{ stroke-dashoffset:-28; }
     }
     /* *** LÍMITE de Santa Cruz: una sola línea sólida celeste oscuro *** */
+    /* Frontera departamental en el MAPA: solo trazo sólido, nunca relleno ni neón */
     [data-nx-boundary="1"]{
-      fill: #155e75 !important;
-      fill-opacity: 1 !important;
-      fill-rule: nonzero !important;
-      stroke: #155e75 !important;
-      stroke-width: 5px !important;
+      fill: none !important;
+      fill-opacity: 0 !important;
+      stroke: #075985 !important;
+      stroke-width: 3.5px !important;
       stroke-opacity: 1 !important;
+      stroke-dasharray: none !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
+      filter: none !important;
+      opacity: 1 !important;
       vector-effect: non-scaling-stroke !important;
     }
   `;
