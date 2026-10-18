@@ -135,14 +135,11 @@
     mix-blend-mode: normal !important;
   }
 
-  /* ===== Tema claro: invertir mapa principal ===== */
-  /* Combinación original que funcionaba: hue-rotate(140deg) + multiply.
-     El multiply elimina el "blanco" resultante de invertir el fondo oscuro,
-     dejando ver el color real del contenedor (--map-bg = #eaedf3). */
+  /* ===== Tema claro: sin filtros (el SVG se muestra con sus colores originales) ===== */
   [data-theme="light"] img.leaflet-image-layer.map-svg-fallback,
   [data-theme="light"] img.leaflet-image-layer.map-svg-native {
-    filter: invert(1) hue-rotate(140deg) saturate(.88) !important;
-    mix-blend-mode: multiply !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
   }
 
   /* La capa animada (nx-flow-img) conserva su regla base con url(#nxRoadFilter).
@@ -181,6 +178,18 @@
     filter:none!important;
   }
   [data-theme="light"] .map-legend.fb .lg-line{filter:none!important}
+  /* ===== Modo claro: "Límite Santa Cruz" en celeste oscuro + más grueso ===== */
+  [data-theme="light"] .map-legend .lg-line.glow{
+    height:5px;
+    background:#0891b2!important;
+    box-shadow:0 0 6px 2px rgba(8,145,178,.90)!important;
+    filter:none!important;
+  }
+  [data-theme="light"] .map-legend .lg-line.road{
+    height:5px;
+    box-shadow:0 0 6px 2px rgba(255,138,0,.90)!important;
+    filter:none!important;
+  }
   .map-legend .lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;white-space:nowrap}
   .map-legend .lg-group.lg-estado{flex-wrap:nowrap}
   .map-legend .lg-row{white-space:nowrap}
