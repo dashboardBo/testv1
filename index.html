@@ -113,16 +113,15 @@
   .map-legend .lg-row:last-child{margin-bottom:0}
   .map-legend .lg-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--muted)}
   .map-legend .lg-line{width:24px;height:3px;border-radius:2px;flex-shrink:0}
-  /* Colores fijos de las líneas de referencia de la leyenda, en ambos temas */
   .map-legend .lg-line.glow{
     height:3px;
-    background:#38bdf8!important; /* Celeste: Límite Santa Cruz */
+    background:#38bdf8!important;
     box-shadow:0 0 5px 2px rgba(56,189,248,.95)!important;
     filter:none!important;
   }
   .map-legend .lg-line.road{
     height:3px;
-    background:#ff8a00!important; /* Naranja: Red vial fundamental */
+    background:#ff8a00!important;
     box-shadow:0 0 5px 2px rgba(255,138,0,.95)!important;
     filter:none!important;
   }
@@ -689,9 +688,9 @@ const $ = id => document.getElementById(id);
 
 /* ====== CONEXIÓN CON GOOGLE SHEETS (Apps Script) ======
    PEGA AQUÍ la URL /exec de tu Web App. */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';                    // ej: 'https://script.google.com/macros/s/AKfycb.../exec'
-const API_TOKEN = '';                  // solo si definiste TOKEN en Code.gs
-const API_REFRESH_MS = 60000;          // 1 minuto (solo mientras la pestaña está activa)
+const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';
+const API_TOKEN = '';
+const API_REFRESH_MS = 60000;
 const MODO_API = !!API_URL;
 
 const NF = new Intl.NumberFormat('es-BO',{maximumFractionDigits:0});
@@ -779,7 +778,6 @@ const CATEGORIAS = [
 ];
 const NCAT = CATEGORIAS.length;
 
-/* Las estaciones vienen 100% del Sheet. Se pueblan en aplicarDatos(). */
 let estaciones = [];
 let mapZona = 'todas', mapPeriodo = 'dia', mpPeriodo = 'dia';
 
@@ -1033,8 +1031,6 @@ function applyMapTheme(theme){
     if(panelColor) setSvgBg(panelColor);
   }
 
-  // Mantener el SVG original como capa vectorial. No convertirlo a PNG/canvas:
-  // esa conversión fija la resolución y provoca pixelación al ampliar el mapa.
   mapProcesadoActivo = false;
   aplicarColoresLeyenda(theme, false);
   mapOverlay = L.imageOverlay(MAP_SRC, DEPT_BOUNDS, {
@@ -1045,7 +1041,6 @@ function applyMapTheme(theme){
       : 'map-svg-native'
   }).addTo(map);
 
-  // Recalcular el tamaño de Leaflet tras el cambio visual del tema.
   requestAnimationFrame(() => map.invalidateSize({pan:false}));
 }
 
@@ -1280,7 +1275,6 @@ function popupHTML(st){
   `;
 }
 
-/* Crea / actualiza marcadores según las estaciones que llegan del API. */
 function sincronizarMarcadores(){
   const idsActuales = new Set();
   estaciones.forEach(st=>{
@@ -1307,7 +1301,6 @@ function sincronizarMarcadores(){
       delete markerState[id];
     }
   });
-  /* Ajusta cuántas filas por columna en la lista */
   document.documentElement.style.setProperty('--rows', Math.max(1, Math.ceil(estaciones.length / 2)));
   map.invalidateSize();
 }
@@ -1518,8 +1511,8 @@ function vehiculosMesPorCategoria(dia){
     const diaCompleto = fracDia > 0.05
       ? totDia / fracDia
       : estaciones.reduce((a,st)=>a + (st.carriles/4)*4000, 0);
-    const diasPrevios = diasDelMes - 1;
-    mesPrevioCat = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios * (0.93 + Math.random()*0.14));
+    const diasPrevios = Math.max(0, diasDelMes - 1);
+    mesPrevioCat = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios);
   }
   return dia.map((v,i) => v + mesPrevioCat[i]);
 }
@@ -1845,13 +1838,17 @@ function fracDiaActual(){
 function fracMesActual(){
   return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
 }
+/* FIX: acumular correctamente suma (antes solo sumaba las estaciones estimadas)
+   y eliminar la aleatoriedad para que el resultado sea determinista. */
 function initMesEstaciones(){
   const fd = fracDiaActual();
   let suma = 0;
   estaciones.forEach(st=>{
-    if(st.mesPrevio !== undefined && st.mesPrevio !== null && st.mesPrevio !== 0) return;
-    const proy = fd > 0.05 ? recaudacionDia(st)/fd : metaEstacion(st,'dia');
-    st.mesPrevio = proy * (diasDelMes-1) * (0.9 + Math.random()*0.2);
+    const tieneValor = (st.mesPrevio !== undefined && st.mesPrevio !== null && st.mesPrevio !== 0);
+    if(!tieneValor){
+      const proy = fd > 0.05 ? recaudacionDia(st)/fd : metaEstacion(st,'dia');
+      st.mesPrevio = proy * Math.max(0, diasDelMes-1);
+    }
     suma += st.mesPrevio;
   });
   mesPrevio = suma;
@@ -2239,7 +2236,6 @@ function aplicarDatos(d){
   if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
   if(d.config && d.config.metaMes > 0) METAS.mes = d.config.metaMes;
 
-  /* === Catálogo de estaciones 100% desde el Sheet === */
   const nuevas = [];
   let sumaMes = 0;
   Object.keys(d.estaciones || {}).forEach(id => {
@@ -2276,9 +2272,56 @@ function aplicarDatos(d){
     sincronizarMarcadores();
     actualizarIconos();
   }
+
+  /* ============================================================
+     FIX PRINCIPAL: si el API no devuelve mesPrev por estación
+     (devuelve 0 para fechas históricas), se recalcula el acumulado
+     del mes sumando los días del mes anteriores a la fecha vista
+     que vienen en d.dias (que sí usa el gráfico de días y sí trae
+     datos correctos). Luego se reparte ese total entre las
+     estaciones proporcionalmente a su recaudación del día.
+     ============================================================ */
+  if(sumaMes === 0 && Array.isArray(d.dias) && d.dias.length > 0 && VISTA.fecha){
+    const fRef = VISTA.fecha;
+    const inicioMesTime = new Date(fRef.getFullYear(), fRef.getMonth(), 1).getTime();
+    const hoyTime = new Date(fRef.getFullYear(), fRef.getMonth(), fRef.getDate()).getTime();
+    let sumaDias = 0;
+    for(let i=0;i<d.dias.length;i++){
+      const z = d.dias[i];
+      if(!z || z.f == null) continue;
+      const p = String(z.f).split('-').map(Number);
+      if(!(p[0] > 0 && p[1] > 0 && p[2] > 0)) continue;
+      const t = new Date(p[0], p[1]-1, p[2]).getTime();
+      if(t >= inicioMesTime && t < hoyTime){
+        sumaDias += Number(z.rec) || 0;
+      }
+    }
+    if(sumaDias > 0){
+      sumaMes = sumaDias;
+      if(estaciones.length > 0){
+        let totalDia = 0;
+        for(let i=0;i<estaciones.length;i++){
+          const st = estaciones[i];
+          for(let k=0;k<st.turnos.length;k++) totalDia += st.turnos[k].recaudacion || 0;
+        }
+        if(totalDia > 0){
+          for(let i=0;i<estaciones.length;i++){
+            const st = estaciones[i];
+            let r = 0;
+            for(let k=0;k<st.turnos.length;k++) r += st.turnos[k].recaudacion || 0;
+            st.mesPrevio = sumaMes * (r / totalDia);
+          }
+        } else {
+          const each = sumaMes / estaciones.length;
+          for(let i=0;i<estaciones.length;i++) estaciones[i].mesPrevio = each;
+        }
+      }
+    }
+  }
+
   mesPrevio = sumaMes;
 
-  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT
+  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && d.mesPrevCat.some(v => Number(v) > 0)
     ? d.mesPrevCat.map(v => Number(v) || 0)
     : null;
   if(Array.isArray(d.mesPrevTurno) && d.mesPrevTurno.length === 3){
@@ -2336,8 +2379,6 @@ async function actualizarDesdeApi(){
     API_EST.fallos++;
     console.error('[API]', e); avisoApi('⚠ Sin conexión con la planilla · se muestran los últimos datos');
   }
-  // En funcionamiento normal, consultar cada minuto incluso si no hubo cambios.
-  // Si falla la conexión, aplicar espera progresiva para no saturar Apps Script.
   const mult = API_EST.fallos ? Math.min(4, 2 ** Math.min(API_EST.fallos - 1, 2)) : 1;
   API_EST.prox = Date.now() + API_REFRESH_MS * mult;
 }
