@@ -1389,12 +1389,15 @@ async function redVialDesdeSVG(){
     }
     /* *** NUEVO: Límite de Santa Cruz más grueso y celeste *** */
     [data-nx-boundary="1"]{
-      stroke: var(--boundary-color, #06b6d4) !important;
-      stroke-width: 4px !important;
-      stroke-opacity: 1 !important;
-      stroke-linecap: round !important;
-      stroke-linejoin: round !important;
-      vector-effect: non-scaling-stroke !important;
+  fill: var(--boundary-color, #06b6d4) !important;
+  fill-opacity: 1 !important;
+  fill-rule: nonzero !important;
+  stroke: var(--boundary-color, #06b6d4) !important;
+  stroke-width: 4px !important;
+  stroke-opacity: 1 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  vector-effect: non-scaling-stroke !important;
     }
   `;
   clone.appendChild(styleEl);
