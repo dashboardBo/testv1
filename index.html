@@ -58,7 +58,6 @@
   :root[data-theme="dark"] .badge-mes select{color-scheme:dark}
   :root[data-theme="light"] .badge-mes select{color-scheme:light}
 
-
   .badge-mes{gap:6px;padding:6px 9px;border-radius:10px;letter-spacing:0;text-transform:none;max-width:min(46vw,620px)}
   #mes-label{font-size:11px;font-weight:900;white-space:nowrap}
   .badge-mes select{border-radius:7px;padding:5px 7px;font-size:10px;letter-spacing:0;min-width:0}
@@ -142,7 +141,8 @@
   .leaflet-bar a{background:var(--panel)!important;color:var(--text)!important;border-color:var(--border)!important;font-weight:700!important}
   .leaflet-bar a:hover{background:var(--panel-2)!important;color:var(--accent)!important}
   .leaflet-bar{box-shadow:var(--shadow)!important;border-radius:6px!important;overflow:hidden;border:1px solid var(--border)!important}
-    .map-legend{background:transparent!important;border:none!important;border-radius:10px!important;padding:8px 10px!important;box-shadow:none!important;color:var(--text);font-size:11px;line-height:1.6;min-width:180px;text-shadow:0 0 3px var(--map-bg),0 0 7px var(--map-bg),0 0 10px var(--map-bg)}
+  
+  .map-legend{background:transparent!important;border:none!important;border-radius:10px!important;padding:8px 10px!important;box-shadow:none!important;color:var(--text);font-size:11px;line-height:1.6;min-width:180px;text-shadow:0 0 3px var(--map-bg),0 0 7px var(--map-bg),0 0 10px var(--map-bg)}
   .map-legend .lg-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
   .map-legend .lg-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;color:var(--text-strong);font-weight:600}
   .map-legend .lg-row:last-child{margin-bottom:0}
@@ -178,18 +178,65 @@
   .map-legend.h .lg-sub{margin:0}
   .map-legend.h .lg-credit{margin:0;padding:0;border:none}
 
-  .nx-flow-road{fill:none;stroke:var(--lg-vial-hi,#fff3b0);stroke-width:2px;stroke-opacity:.3;stroke-dasharray:6 18;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;shape-rendering:optimizeSpeed;animation:nxFlow .9s steps(8) infinite,nxWave 4.8s steps(36) infinite;animation-delay:0s,var(--wd,0s)}
-  .nx-flow-road.nx-rev{animation-name:nxFlowRev,nxWave}
-  @keyframes nxFlow{to{stroke-dashoffset:-24}}
-  @keyframes nxFlowRev{to{stroke-dashoffset:24}}
-  @keyframes nxWave{0%{stroke-opacity:1}14%{stroke-opacity:1}38%{stroke-opacity:.3}100%{stroke-opacity:.3}}
-  .leaflet-flow-pane.nx-pausa *{animation-play-state:paused!important}
-  .leaflet-flow-pane.nx-lite .nx-flow-road{animation-duration:1.8s,6s!important;animation-timing-function:steps(6),steps(12)!important}
-  .leaflet-flow-pane.nx-lite .nx-flow-img{animation-duration:7s!important}
-  .leaflet-pane svg.nx-flow-svg.leaflet-image-layer{background:transparent!important;pointer-events:none}
-  .leaflet-pane .nx-flow-img.leaflet-image-layer{background:transparent!important;pointer-events:none;filter:url(#nxRoadFilter);opacity:.95;-webkit-mask-image:radial-gradient(circle at var(--cx,33%) var(--cy,61%),transparent calc(var(--nx-r) - 22%),#000 var(--nx-r),transparent calc(var(--nx-r) + 3%));mask-image:radial-gradient(circle at var(--cx,33%) var(--cy,61%),transparent calc(var(--nx-r) - 22%),#000 var(--nx-r),transparent calc(var(--nx-r) + 3%));animation:nxRing 4.8s steps(36) infinite}
-  @property --nx-r{syntax:'<percentage>';inherits:false;initial-value:0%}
-  @keyframes nxRing{from{--nx-r:-6%}to{--nx-r:125%}}
+  /* ====================================================
+     ANIMACIÓN DE FLUJO EN CARRETERAS (NUEVO EFECTO)
+     ==================================================== */
+  .nx-flow-road {
+    fill: none;
+    stroke: #ffcc00; /* Color amarillo del ejemplo */
+    stroke-width: 2.5px;
+    stroke-dasharray: 10 15; /* Guiones de 10px, espacios de 15px */
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    shape-rendering: optimizeSpeed;
+    animation: moverFlujo 1s linear infinite;
+  }
+
+  .nx-flow-road.nx-rev {
+    animation-direction: reverse; /* Hace que el flujo vaya hacia el origen */
+  }
+
+  @keyframes moverFlujo {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -25; } /* Suma de 10 + 15 */
+  }
+
+  /* Pausar animación cuando el mapa se mueve */
+  .leaflet-flow-pane.nx-pausa * {
+    animation-play-state: paused !important;
+  }
+
+  /* Reducir velocidad si el dispositivo va lento */
+  .leaflet-flow-pane.nx-lite .nx-flow-road {
+    animation-duration: 2.5s !important;
+  }
+
+  .leaflet-pane svg.nx-flow-svg.leaflet-image-layer {
+    background: transparent !important;
+    pointer-events: none;
+  }
+
+  /* Efecto de radar (fallback si no se puede leer el SVG) */
+  .leaflet-pane .nx-flow-img.leaflet-image-layer {
+    background: transparent !important;
+    pointer-events: none;
+    filter: url(#nxRoadFilter);
+    opacity: .95;
+    -webkit-mask-image: radial-gradient(circle at var(--cx,33%) var(--cy,61%), transparent calc(var(--nx-r) - 22%), #000 var(--nx-r), transparent calc(var(--nx-r) + 3%));
+    mask-image: radial-gradient(circle at var(--cx,33%) var(--cy,61%), transparent calc(var(--nx-r) - 22%), #000 var(--nx-r), transparent calc(var(--nx-r) + 3%));
+    animation: nxRing 4.8s steps(36) infinite;
+  }
+  @property --nx-r {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 0%;
+  }
+  @keyframes nxRing {
+    from { --nx-r: -6%; }
+    to { --nx-r: 125%; }
+  }
+  /* ==================================================== */
 
   .pin-container{width:14px;height:14px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 2px 5px rgba(0,0,0,.55);transition:transform .2s ease,box-shadow .2s ease}
   .leaflet-marker-icon:hover .pin-container{transform:scale(1.8);box-shadow:0 0 12px currentColor}
@@ -432,8 +479,7 @@
 
   @media (pointer:coarse){.seg button{padding:6px 12px}.kpi .label .seg button{padding:5px 10px}.map-filters .seg button{padding:7px 12px}.btn-action{min-height:40px;min-width:40px}.filter-btn{min-height:32px}}
 
-  @media (max-width:700px){header{padding:10px 12px}.badge-mes{font-size:10px;padding:5px 10px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kpi{padding:8px 10px;min-height:88px}.kpi .value{font-size:clamp(16px,5vw,20px)}.kpi .label{letter-spacing:.5px}.kpi:last-child:nth-child(odd){grid-column:1 / -1}.map-panel{min-height:0;height:min(72dvh,540px)}}
-  @media (max-width:360px){.kpi-row{grid-template-columns:1fr}}
+  @media (max-width:700px){header{padding:10px 12px}.badge-mes{font-size:10px;padding:5px 10px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kpi{padding:8px 10px;min-height:88px}.kpi .value{font-size:clamp(16px,5vw,20px)}.kpi .label{letter-spacing:.5px}.kpi:last-child:nth-child(odd){grid-column:1 / -1}.map-panel{min-height:0;height:min(72dvh,540px)}}@media (max-width:360px){.kpi-row{grid-template-columns:1fr}}
 
   @media (orientation:landscape) and (max-height:520px) and (max-width:1100px){
     #app-shell{gap:6px;padding-top:max(6px,env(safe-area-inset-top));padding-bottom:max(6px,env(safe-area-inset-bottom))}
@@ -456,7 +502,6 @@
     .map-legend .lg-group:first-child,.map-legend .lg-credit{display:none}
   }
 
-  /* Ajustes de distribución: contador a la izquierda del reloj y paneles sin scroll interno. */
   .head-right{gap:16px;min-width:0}
   .refresh-status{display:flex;flex:0 0 auto;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;margin:0;padding:0 14px 0 0;border-right:1px solid var(--border);font-size:12px;line-height:1.2;color:var(--text-strong);min-width:155px}
   .refresh-status-line{display:flex;align-items:center;gap:8px;min-height:17px}
@@ -809,7 +854,7 @@ const $ = id => document.getElementById(id);
 /* ====== CONEXIÓN CON GOOGLE SHEETS (Apps Script) ====== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwpM5k-6fSofZDn3m_fJ9_otcHztzqO7G5YKfiN2vfK021m9DlPwVL62YC67Wjgkuwe1A/exec';
 const API_TOKEN = '';
-const API_REFRESH_MS = 60000; // actualización automática cada 60 segundos
+const API_REFRESH_MS = 60000;
 const MODO_API = !!API_URL;
 
 const NF = new Intl.NumberFormat('es-BO',{maximumFractionDigits:0});
@@ -1648,7 +1693,7 @@ document.querySelectorAll('#cat-sort-seg button').forEach(b=>{
 
 let turnoPeriodo = 'dia';
 let sysPeriodo = 'dia';
-const TURNO_W = [1/3, 1/3, 1/3];   // el API lo sobrescribe con mesPrevTurno
+const TURNO_W = [1/3, 1/3, 1/3];
 
 function renderTurnos(){
   if(mesPrevio === null) initMesEstaciones();
@@ -1886,7 +1931,6 @@ function renderRefreshStatus(now = Date.now()) {
   const segundos = Math.ceil(falta / 1000);
   label.textContent = `Actualiza en ${String(Math.floor(segundos/60)).padStart(2,'0')}:${String(segundos%60).padStart(2,'0')}`;
   bar.style.width = `${Math.min(100, Math.max(0, 100 - (falta / API_REFRESH_MS * 100)))}%`;
-  // Salvaguarda: si el contador llegó a cero, dispara la consulta sin esperar otro ciclo.
   if(segundos === 0 && !apiActualizando && !cambiandoFecha) queueMicrotask(() => {
     if(VISTA.actual && !apiActualizando && !cambiandoFecha && Date.now() >= API_EST.prox) actualizarDesdeApi();
   });
@@ -1939,7 +1983,6 @@ document.addEventListener('visibilitychange', async ()=>{
 
 /* ==========================================================
    META VS REAL
-   (las metas se editan en la hoja Config de la planilla)
    ========================================================== */
 const METAS = {dia:3000000, mes:90000000};
 let mesPrevio = null;
@@ -1956,7 +1999,6 @@ function fracMesActual(){
   return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
 }
 function initMesEstaciones(){
-  // Solo se suman importes reales recibidos desde la planilla; no se estiman ni inventan valores.
   let suma = 0;
   estaciones.forEach(st => { suma += Number(st.mesPrevio) || 0; });
   mesPrevio = suma;
@@ -2219,8 +2261,6 @@ document.addEventListener('keydown', e=>{
 
 let idleTimer = null;
 document.addEventListener('mousemove', ()=>{
-  // Se conserva el cursor visible en pantalla completa para evitar el efecto
-  // de desaparición/reaparición que puede percibirse como un salto.
   const cl = document.body.classList;
   if(cl.contains('idle')) cl.remove('idle');
   clearTimeout(idleTimer);
@@ -2375,7 +2415,6 @@ function aplicarDatos(d){
     sincronizarMarcadores();
     actualizarIconos();
   }
-
 
   mesPrevio = sumaMes;
 
