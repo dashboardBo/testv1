@@ -218,7 +218,7 @@
   .head-actions .tag{font-size:8px;padding:2px 6px;letter-spacing:.3px;white-space:nowrap}
 
   .filter-wrap{position:relative}
-  .filter-btn{background:var(--panel-2);border:1px solid var(--border);color:var(--accent);font-size:8px;font-weight:800;letter-spacing:.3px;padding:3px 7px;border-radius:20px;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:inherit}
+  .filter-btn{background:var(--panel-2);border:1px solid var(--border);color:var(--accent);font-size:8px;font-weight:800;letter-spacing:.3px;padding:3px 7px;border-radius:20px;cursor:pointer;transition:background-color .2s,border-color .2s,color .2s,box-shadow .2s;white-space:nowrap;font-family:inherit}
   .filter-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
   .filter-btn:focus{outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
   .filter-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--panel);border:1px solid var(--border-hi);border-radius:8px;padding:5px;min-width:180px;box-shadow:var(--shadow);z-index:200;display:none;flex-direction:column;gap:1px}
@@ -244,15 +244,15 @@
 
   .center-col{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:10px;min-height:0;min-width:0}
   .center-col > .panel-stations{min-height:0}
-  .panel-days{padding:10px 10px 8px;flex-shrink:0}
-  .panel-days .panel-head{margin:0 6px 8px;padding-bottom:6px;flex-wrap:wrap}
+  .panel-days{padding:7px 10px 5px;flex-shrink:0}
+  .panel-days .panel-head{margin:0 6px 5px;padding-bottom:4px;flex-wrap:wrap}
   .days-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
-  .dcol{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 3px;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;position:relative;overflow:hidden}
+  .dcol{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:4px 3px;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;position:relative;overflow:hidden}
   .dcol.hoy{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-soft),var(--panel-2))}
   .dcol.futuro{opacity:.45}
   .dcol .dn{font-size:8.5px;font-weight:800;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .dcol.hoy .dn{color:var(--accent)}
-  .dcol .dbar{width:100%;height:clamp(30px,5.5vh,60px);display:flex;align-items:flex-end;justify-content:center}
+  .dcol .dbar{width:100%;height:clamp(20px,3.5vh,38px);display:flex;align-items:flex-end;justify-content:center}
   .dcol .dbar i{display:block;width:58%;max-width:28px;min-height:2px;border-radius:3px 3px 0 0;background:var(--green);transition:height .6s ease}
   .dcol .dbar i.warn{background:var(--yellow)}
   .dcol .dbar i.crit{background:var(--red)}
@@ -261,7 +261,7 @@
   .dcol .dv{font-size:clamp(10px,.78vw,12.5px);font-weight:800;font-variant-numeric:tabular-nums;color:var(--text-strong);white-space:nowrap}
   .dcol .ds{font-size:8.5px;color:var(--muted);font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dcol .ds.ok{color:var(--green)} .dcol .ds.warn{color:var(--yellow)} .dcol .ds.crit{color:var(--red)}
-  .days-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:7px 6px 0;font-size:10px;color:var(--muted);font-weight:700}
+  .days-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:4px 6px 0;font-size:10px;color:var(--muted);font-weight:700}
   .days-foot b{color:var(--text-strong);font-variant-numeric:tabular-nums}
 
   .stations-scroll{flex:1;min-height:0;overflow:hidden}
@@ -334,7 +334,7 @@
   .sistema .bs{flex:1;text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
 
   .seg{display:flex;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--panel-2);flex-shrink:0}
-  .seg button{background:none;border:none;color:var(--muted);font-family:inherit;font-size:9px;font-weight:800;padding:3px 10px;cursor:pointer;letter-spacing:.5px;text-transform:uppercase;transition:all .2s}
+  .seg button{background:none;border:none;color:var(--muted);font-family:inherit;font-size:9px;font-weight:800;padding:3px 10px;cursor:pointer;letter-spacing:.5px;text-transform:uppercase;transition:background-color .2s,color .2s}
   .seg button:hover{color:var(--text-strong)}
   .seg button.active{background:var(--accent-soft);color:var(--accent)}
 
@@ -417,7 +417,6 @@
   @keyframes toastGlow{0%,100%{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 0 rgba(213,43,30,.55)}50%{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 10px rgba(213,43,30,0)}}
   body.kiosk .header-btns{opacity:.4;transition:opacity .2s}
   body.kiosk .header-btns:hover{opacity:1}
-  body.kiosk.idle, body.kiosk.idle *{cursor:none!important}
   body.hidden *{animation-play-state:paused!important}
 
   @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
@@ -531,7 +530,7 @@
 <div id="loading-overlay" hidden role="status" aria-live="polite" aria-label="Cargando datos">
   <div class="loading-card">
     <div class="loading-spinner" aria-hidden="true"></div>
-    <div class="loading-title">Consultando Google Sheets</div>
+    <div class="loading-title">Consultando base de datos</div>
     <div class="loading-message" id="loading-message">Estamos cargando la información del periodo seleccionado…</div>
   </div>
 </div>
@@ -2220,10 +2219,11 @@ document.addEventListener('keydown', e=>{
 
 let idleTimer = null;
 document.addEventListener('mousemove', ()=>{
+  // Se conserva el cursor visible en pantalla completa para evitar el efecto
+  // de desaparición/reaparición que puede percibirse como un salto.
   const cl = document.body.classList;
   if(cl.contains('idle')) cl.remove('idle');
   clearTimeout(idleTimer);
-  if(document.fullscreenElement) idleTimer = setTimeout(()=>cl.add('idle'), 4000);
 }, {passive:true});
 actualizarBotonAlertas();
   
