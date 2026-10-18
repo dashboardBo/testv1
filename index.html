@@ -1198,7 +1198,7 @@ async function redVialDesdeSVG(){
   host.appendChild(live);
   document.body.appendChild(host);
 
-  let clone = null, vial = null, limite = null;
+  let clone = null, vial = null, limite = null, maxPh = 1;
 
   try{
     const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
@@ -1253,15 +1253,19 @@ async function redVialDesdeSVG(){
     };
     function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
 
+    // Orientar cada tramo para que fluya del centro hacia afuera
+    // y guardar su distancia al centro para desfasar la animación
     carreteras.forEach(o => {
       try{
-        const L0 = o.el.getTotalLength(), el = o.el;
-        const a = aRaiz(el, ...Object.values(pt(el, 0))), b = aRaiz(el, ...Object.values(pt(el, L0)));
-        
-        // Si el punto final está más cerca del centro que el inicial, invertir la animación
-        if(Math.hypot(b.x-cx, b.y-cy) < Math.hypot(a.x-cx, a.y-cy)) {
-          o.el.setAttribute('data-nx-rev', '1');
-        }
+        const el = o.el, L0 = el.getTotalLength();
+        const p0 = pt(el, 0), p1 = pt(el, L0);
+        const a = aRaiz(el, p0.x, p0.y), b = aRaiz(el, p1.x, p1.y);
+        const da = Math.hypot(a.x-cx, a.y-cy), db = Math.hypot(b.x-cx, b.y-cy);
+        // si el final está más cerca del centro, se invierte para que fluya hacia afuera
+        if(db < da) el.setAttribute('data-nx-rev', '1');
+        const d = Math.min(da, db);
+        el.setAttribute('data-nx-ph', d.toFixed(1));
+        if(d > maxPh) maxPh = d;
       }catch(e){}
     });
 
@@ -1272,35 +1276,38 @@ async function redVialDesdeSVG(){
 
   clone.querySelectorAll('style,script,foreignObject,title,desc,metadata').forEach(n=>n.remove());
 
-  // Inyectar el CSS con las medidas corregidas (más finitas y espaciadas)
+  // CSS del flujo: suave, continuo y sin efecto de pulso
+  const DUR = 2.6; // segundos por ciclo (más alto = más lento y suave)
   const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
   styleEl.textContent = `
-    .nx-flow-road {
-      fill: none !important;
-      stroke: #ffcc00 !important;
-      stroke-width: 1.5px !important; /* MÁS FINO */
-      stroke-dasharray: 4 16 !important; /* MÁS LARGO Y ESPACIADO */
-      stroke-linecap: round !important;
-      stroke-linejoin: round !important;
-      vector-effect: non-scaling-stroke !important;
-      animation: moverFlujo 1s linear infinite !important;
+    .nx-flow-road{
+      fill:none !important;
+      stroke:#ffcc00 !important;
+      stroke-width:1.6px !important;
+      stroke-opacity:.9 !important;
+      stroke-dasharray:6 22 !important;
+      stroke-linecap:round !important;
+      stroke-linejoin:round !important;
+      vector-effect:non-scaling-stroke !important;
+      animation:moverFlujo ${DUR}s linear infinite !important;
     }
-    .nx-flow-road.nx-rev {
-      animation-direction: reverse !important;
-    }
-    @keyframes moverFlujo {
-      from { stroke-dashoffset: 0; }
-      to { stroke-dashoffset: -20; } /* Suma exacta de 4 + 16 */
+    .nx-flow-road.nx-rev{ animation-direction:reverse !important; }
+    @keyframes moverFlujo{
+      from{ stroke-dashoffset:0; }
+      to{ stroke-dashoffset:-28; } /* 6 + 22 = ciclo exacto, sin saltos */
     }
   `;
   clone.appendChild(styleEl);
 
-  // Aplicar las clases de animación solo a los elementos marcados
+  // Aplicar las clases de animación solo a los tramos marcados
   clone.querySelectorAll('path,polyline,line').forEach(el=>{
     if(el.getAttribute('data-nx-road') === '1'){
       const rev = el.getAttribute('data-nx-rev') === '1';
-      ['style','stroke-width','stroke-dasharray','stroke-opacity','class','filter','data-nx-road','data-nx-rev'].forEach(a=>el.removeAttribute(a));
+      const ph  = parseFloat(el.getAttribute('data-nx-ph')) || 0;
+      ['style','stroke-width','stroke-dasharray','stroke-opacity','class','filter','data-nx-road','data-nx-rev','data-nx-ph'].forEach(a=>el.removeAttribute(a));
       el.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
+      // desfase según la distancia al centro: evita que todo "lata" al mismo tiempo
+      el.style.animationDelay = (-(ph / maxPh) * DUR).toFixed(2) + 's';
     }
   });
 
