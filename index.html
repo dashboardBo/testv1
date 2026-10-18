@@ -134,20 +134,19 @@
     filter: none !important;
     mix-blend-mode: normal !important;
   }
-  [data-theme="dark"] .nx-flow-img {
-    mix-blend-mode: normal !important;
-  }
 
-  /* ===== Tema claro: invertir mapa principal y capa animada ===== */
+  /* ===== Tema claro: invertir mapa principal ===== */
+  /* Combinación original que funcionaba: hue-rotate(140deg) + multiply.
+     El multiply elimina el "blanco" resultante de invertir el fondo oscuro,
+     dejando ver el color real del contenedor (--map-bg = #eaedf3). */
   [data-theme="light"] img.leaflet-image-layer.map-svg-fallback,
   [data-theme="light"] img.leaflet-image-layer.map-svg-native {
-    filter: invert(1) hue-rotate(180deg) saturate(.88) !important;
-    mix-blend-mode: normal !important;
+    filter: invert(1) hue-rotate(140deg) saturate(.88) !important;
+    mix-blend-mode: multiply !important;
   }
-  [data-theme="light"] .leaflet-flow-pane img.nx-flow-img {
-    filter: url(#nxRoadFilter) invert(1) hue-rotate(180deg) saturate(.88) !important;
-    mix-blend-mode: normal !important;
-  }
+
+  /* La capa animada (nx-flow-img) conserva su regla base con url(#nxRoadFilter).
+     No se sobrescribe aquí para no romper el chaining de filter. */
 
   /* ===== Fondo del mapa en modo claro ===== */
   [data-theme="light"] .leaflet-container {
