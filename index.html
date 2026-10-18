@@ -680,7 +680,7 @@ const $ = id => document.getElementById(id);
    PEGA AQUÍ la URL /exec de tu Web App. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';                    // ej: 'https://script.google.com/macros/s/AKfycb.../exec'
 const API_TOKEN = '';                  // solo si definiste TOKEN en Code.gs
-const API_REFRESH_MS = 180000;         // 3 min
+const API_REFRESH_MS = 60000;          // 1 minuto (solo mientras la pestaña está activa)
 const MODO_API = !!API_URL;
 
 const NF = new Intl.NumberFormat('es-BO',{maximumFractionDigits:0});
@@ -2313,8 +2313,10 @@ async function actualizarDesdeApi(){
     API_EST.fallos++;
     console.error('[API]', e); avisoApi('⚠ Sin conexión con la planilla · se muestran los últimos datos');
   }
-  const mult = API_EST.fallos ? Math.min(8, 2 ** API_EST.fallos) : (1 << API_EST.idle);
-  API_EST.prox = Date.now() + API_REFRESH_MS * mult - 1500;
+  // En funcionamiento normal, consultar cada minuto incluso si no hubo cambios.
+  // Si falla la conexión, aplicar espera progresiva para no saturar Apps Script.
+  const mult = API_EST.fallos ? Math.min(4, 2 ** Math.min(API_EST.fallos - 1, 2)) : 1;
+  API_EST.prox = Date.now() + API_REFRESH_MS * mult;
 }
 
 let cambiandoFecha = false;
