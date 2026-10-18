@@ -76,8 +76,9 @@
   .kpi.k-amber::before{background:var(--flag-yellow)}
   .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
   /* Los KPI con botones Día/Mes: el nombre arriba y los botones en la línea de abajo (sin solaparse) */
-  .kpi .label.lb-col{flex-direction:column-reverse;align-items:flex-start;justify-content:flex-start;gap:5px;margin-bottom:6px}
-  .kpi .label.lb-col > span:first-child{max-width:100%}
+  .kpi .label.lb-col{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .kpi .label.lb-col > span:first-child{flex:1;min-width:0}
+  .kpi .label.lb-col .seg{flex-shrink:0}
   .kpi .value{font-size:clamp(17px,1.45vw,24px);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;color:var(--text-strong)}
   .kpi .value small{font-size:11px;color:var(--muted);font-weight:600;margin-left:4px}
   .kpi.k-green .value{color:var(--green)}
@@ -2156,7 +2157,7 @@ const ymStr = (y, m) => y + '-' + String(m+1).padStart(2,'0');
 const ymd = f => f.getFullYear() + '-' + String(f.getMonth()+1).padStart(2,'0') + '-' + String(f.getDate()).padStart(2,'0');
 const urlApi = q => API_URL + (API_URL.includes('?') ? '&' : '?') + q + (API_TOKEN ? '&token=' + encodeURIComponent(API_TOKEN) : '');
 
-const CACHE_VER = 'nexus-v2:';
+const CACHE_VER = 'nexus-v3:';
 const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
 const TTL_HIST = 24 * 3600e3;
 const TTL_INDICE = 3600e3;
@@ -2184,14 +2185,14 @@ function lruTocar(k){
 
 async function obtenerDatos(f, forzar){
   const k = ymd(f), esHoy = (k === ymd(new Date()));
-  const ttl = esHoy ? TTL_HOY : TTL_HIST;
+  const ttl = esHoy ? TTL_HOY : 60000;   /* días pasados: se revalidan cada 60 s (antes 24 h) */
   const e = memCache.get(k) || lsGet('d:' + k);
   if(e && !forzar && Date.now() - e.t < ttl){ memCache.set(k, e); return e.d; }
   if(enVuelo.has(k)) return enVuelo.get(k);
   const p = (async () => {
     try{
-      /* Para "hoy" se envía la versión que ya tenemos: si no hubo cambios el servidor responde {sinCambios:true} */
-      const desde = (esHoy && e && e.d && e.d.generado) ? '&desde=' + encodeURIComponent(e.d.generado) : '';
+      /* Siempre se envía la versión que ya tenemos: si no hubo cambios el servidor responde {sinCambios:true} */
+      const desde = (e && e.d && e.d.generado) ? '&desde=' + encodeURIComponent(e.d.generado) : '';
       const r = await fetch(urlApi('fecha=' + k + desde), {cache:'no-store'});
       let d = await r.json();
       if(d && d.sinCambios && e && e.d) d = e.d;
