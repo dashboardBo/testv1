@@ -708,12 +708,12 @@ function toggleTheme() {
   const btn = $('btn-theme');
   const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   html.setAttribute('data-theme', next);
-  try { localStorage.setItem('nexus-theme', next); } catch(e){}
+  try{ localStorage.setItem('nexus-theme', next); }catch(e){}
   btn.innerHTML = next === 'dark' ? '🌙' : '☀️';
   if (typeof applyMapTheme === 'function') applyMapTheme(next);
 }
 let savedTheme = 'dark';
-try { savedTheme = localStorage.getItem('nexus-theme') || 'dark'; } catch(e){}
+try{ savedTheme = localStorage.getItem('nexus-theme') || 'dark'; }catch(e){}
 document.documentElement.setAttribute('data-theme', savedTheme);
 $('btn-theme').innerHTML = savedTheme === 'dark' ? '🌙' : '☀️';
 
@@ -1657,7 +1657,7 @@ function renderKPIs(){
   pintarMetas(recDia, M);
   DOM.kpiVehiculosSub.textContent = (vehPeriodo === 'mes' ? 'Acumulado mes' : 'Acumulado día') + ' · ' + estaciones.length + ' estaciones';
   DOM.kpiAlertasSub.textContent = fmt(cp.crit) + ' crít. · ' + fmt(cp.warn) + ' adv. · ' + fmt(cp.info) + ' reg.';
-  DOM.alertTag.textContent = alertasActivas.length;
+  DOM.alertTag.textContent = alertas;
   renderKPIsExtra();
 }
 
@@ -1724,10 +1724,14 @@ const PLANTILLAS_ALERTA = [
 const CONT = {dia:{crit:0,warn:0,info:0}, mesPrev:{crit:0,warn:0,info:0}};
 let contPeriodo = 'dia';
 function contingenciasPeriodo(){
-  const d = CONT.dia, p = CONT.mesPrev;
+  const num = v => Number(v) || 0;
+  const d = CONT.dia     || {};
+  const p = CONT.mesPrev || {};
   return contPeriodo === 'mes'
-    ? {crit:d.crit+p.crit, warn:d.warn+p.warn, info:d.info+p.info}
-    : {crit:d.crit, warn:d.warn, info:d.info};
+    ? { crit: num(d.crit) + num(p.crit),
+        warn: num(d.warn) + num(p.warn),
+        info: num(d.info) + num(p.info) }
+    : { crit: num(d.crit), warn: num(d.warn), info: num(d.info) };
 }
 document.querySelectorAll('#cont-seg button').forEach(b=>{
   b.addEventListener('click', ()=>{
@@ -2274,7 +2278,9 @@ function aplicarDatos(d){
   }
   mesPrevio = sumaMes;
 
-  mesPrevioCat = (d.mesPrevCat && d.mesPrevCat.length === NCAT) ? d.mesPrevCat.slice() : null;
+  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT
+    ? d.mesPrevCat.map(v => Number(v) || 0)
+    : null;
   if(Array.isArray(d.mesPrevTurno) && d.mesPrevTurno.length === 3){
     const ts = d.mesPrevTurno.reduce((a,b)=>a+b, 0);
     if(ts > 0) d.mesPrevTurno.forEach((v,i)=>{ TURNO_W[i] = v/ts; });
@@ -2289,7 +2295,13 @@ function aplicarDatos(d){
     hoy:hoy.getTime(), lunes:lunes.getTime(), dowHoy:dowLun(hoy)
   };
 
-  CONT.dia = d.cont.dia; CONT.mesPrev = d.cont.mesPrev;
+  const _normSev = x => ({
+    crit: Number(x && x.crit) || 0,
+    warn: Number(x && x.warn) || 0,
+    info: Number(x && x.info) || 0
+  });
+  CONT.dia     = _normSev(d.cont && d.cont.dia);
+  CONT.mesPrev = _normSev(d.cont && d.cont.mesPrev);
   const lista = (d.alertas || []).map(a=>{
     a = Object.assign({}, a, {sev: /^(info|regular|informativa)$/i.test(a.sev) ? 'info' : /^(crit|critica|crítica)$/i.test(a.sev) ? 'crit' : /^(warn|advertencia)$/i.test(a.sev) ? 'warn' : a.sev});
     const st = estaciones.find(s=>s.id === a.est) || {nombre:a.est, sistema:''};
