@@ -178,64 +178,6 @@
   .map-legend.h .lg-sub{margin:0}
   .map-legend.h .lg-credit{margin:0;padding:0;border:none}
 
-  /* ====================================================
-     ANIMACIÓN DE FLUJO EN CARRETERAS (FORZADO CON !IMPORTANT)
-     ==================================================== */
-  .nx-flow-road {
-    fill: none !important;
-    stroke: #ffcc00 !important; /* Color amarillo brillante */
-    stroke-width: 3px !important; /* Grosor para que resalte */
-    stroke-dasharray: 10 15 !important; /* Guiones de 10px, espacios de 15px */
-    stroke-linecap: round !important;
-    stroke-linejoin: round !important;
-    vector-effect: non-scaling-stroke !important;
-    shape-rendering: optimizeSpeed !important;
-    animation: moverFlujo 1s linear infinite !important;
-  }
-
-  .nx-flow-road.nx-rev {
-    animation-direction: reverse !important;
-  }
-
-  @keyframes moverFlujo {
-    from { stroke-dashoffset: 0; }
-    to { stroke-dashoffset: -25; } /* Suma de 10 + 15 */
-  }
-
-  .leaflet-flow-pane.nx-pausa * {
-    animation-play-state: paused !important;
-  }
-
-  .leaflet-flow-pane.nx-lite .nx-flow-road {
-    animation-duration: 2.5s !important;
-  }
-
-  .leaflet-pane svg.nx-flow-svg.leaflet-image-layer {
-    background: transparent !important;
-    pointer-events: none;
-  }
-
-  /* Fallback por si falla la lectura del archivo SVG */
-  .leaflet-pane .nx-flow-img.leaflet-image-layer {
-    background: transparent !important;
-    pointer-events: none;
-    filter: url(#nxRoadFilter);
-    opacity: .95;
-    -webkit-mask-image: radial-gradient(circle at var(--cx,33%) var(--cy,61%), transparent calc(var(--nx-r) - 22%), #000 var(--nx-r), transparent calc(var(--nx-r) + 3%));
-    mask-image: radial-gradient(circle at var(--cx,33%) var(--cy,61%), transparent calc(var(--nx-r) - 22%), #000 var(--nx-r), transparent calc(var(--nx-r) + 3%));
-    animation: nxRing 4.8s steps(36) infinite;
-  }
-  @property --nx-r {
-    syntax: '<percentage>';
-    inherits: false;
-    initial-value: 0%;
-  }
-  @keyframes nxRing {
-    from { --nx-r: -6%; }
-    to { --nx-r: 125%; }
-  }
-  /* ==================================================== */
-
   .pin-container{width:14px;height:14px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 2px 5px rgba(0,0,0,.55);transition:transform .2s ease,box-shadow .2s ease}
   .leaflet-marker-icon:hover .pin-container{transform:scale(1.8);box-shadow:0 0 12px currentColor}
   .pin-ok{background:var(--green);color:var(--green)}
@@ -1237,95 +1179,72 @@ const CENTRO_RED = {lat:-17.78, lon:-63.18};
 const ONDA_VIAJE_S = 3.2;
 
 async function redVialDesdeSVG(){
-  const doc = new DOMParser().parseFromString(await mapSvgTexto(), 'image/svg+xml');
+  let text;
+  try {
+    const r = await fetch(MAP_SRC);
+    if(!r.ok) throw new Error('HTTP error');
+    text = await r.text();
+  } catch(e) {
+    console.warn('[NEXUS] No se pudo leer santacruz.svg por CORS. Si abres el archivo con doble clic (file://), los navegadores bloquean fetch(). Usa un servidor local (ej. Live Server).');
+    return false;
+  }
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   const root = doc.documentElement;
   if(!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return false;
-  const host = document.createElement('div');
-  host.style.cssText = 'position:absolute;left:-99999px;top:0;width:10px;height:10px;overflow:hidden;visibility:hidden;pointer-events:none';
-  const live = document.importNode(root, true);
-  host.appendChild(live);
-  document.body.appendChild(host);
-  let clone = null, vial = null, limite = null;
-  try{
-    const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
-    const abiertos = new Map(), cerrados = new Map(), info = [];
-    live.querySelectorAll('path,polyline,line,polygon').forEach(el=>{
-      if(el.closest(SKIP)) return;
-      const cs = getComputedStyle(el);
-      if(!cs.stroke || cs.stroke === 'none' || cs.display === 'none') return;
-      if(parseFloat(cs.strokeOpacity) < 0.2) return;
-      const rgb = parseColorCSS(cs.stroke);
-      if(!rgb) return;
-      const tag = el.tagName.toLowerCase();
-      const cerrado = tag === 'polygon' || (tag === 'path' && /[zZ]/.test(el.getAttribute('d') || ''));
-      const k = rgb.join(',');
-      const mapa = cerrado ? cerrados : abiertos;
-      const o = mapa.get(k);
-      if(o) o.n++; else mapa.set(k, {rgb, n:1});
-      info.push({el, rgb, cerrado});
-    });
-    const top = m => [...m.values()].sort((a,b)=>b.n-a.n);
-    const ab = top(abiertos), ce = top(cerrados);
-    if(!ab.length) return false;
-    vial = ab[0].rgb;
-    limite = ce.length ? ce[0].rgb : ((ab.find(o => rgbDist(o.rgb, vial) > 60) || ab[0]).rgb);
-    const carreteras = info.filter(o => !o.cerrado && rgbDist(o.rgb, vial) < 60);
-    if(!carreteras.length || carreteras.length > 2500) return false;
-    carreteras.forEach(o => o.el.setAttribute('data-nx-road','1'));
-    let vb = live.viewBox && live.viewBox.baseVal;
-    if(!vb || !(vb.width > 0)){
-      const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
-      vb = {x:0, y:0, width:num(live.getAttribute('width')) || 1000, height:num(live.getAttribute('height')) || 1000};
+  
+  const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
+  const clone = root.cloneNode(true);
+
+  // Inyectar estilos CSS directamente en el SVG (evita conflictos con Leaflet)
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  styleEl.textContent = `
+    .nx-flow-road {
+      fill: none !important;
+      stroke-width: 3px !important;
+      stroke-dasharray: 10 15 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      vector-effect: non-scaling-stroke !important;
+      animation: moverFlujo 1s linear infinite !important;
     }
-    const cx = vb.x + (CENTRO_RED.lon - DEPT_BOUNDS.getWest())  / (DEPT_BOUNDS.getEast()  - DEPT_BOUNDS.getWest())  * vb.width;
-    const cy = vb.y + (DEPT_BOUNDS.getNorth() - CENTRO_RED.lat) / (DEPT_BOUNDS.getNorth() - DEPT_BOUNDS.getSouth()) * vb.height;
-    const rootInv = live.getScreenCTM() ? live.getScreenCTM().inverse() : null;
-    const aRaiz = (el, x, y) => {
-      const m = rootInv && el.getScreenCTM() ? rootInv.multiply(el.getScreenCTM()) : null;
-      return m ? new DOMPoint(x, y).matrixTransform(m) : {x, y};
-    };
-    let maxD = 1;
-    function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
-    carreteras.forEach(o => {
-      try{
-        const L0 = o.el.getTotalLength(), el = o.el;
-        const a = aRaiz(el, ...Object.values(pt(el, 0))), b = aRaiz(el, ...Object.values(pt(el, L0))), c = aRaiz(el, ...Object.values(pt(el, L0/2)));
-        o.da = Math.hypot(a.x-cx, a.y-cy); o.db = Math.hypot(b.x-cx, b.y-cy);
-        o.dm = Math.min(o.da, o.db, Math.hypot(c.x-cx, c.y-cy));
-        maxD = Math.max(maxD, o.da, o.db);
-      }catch(e){ o.dm = null; }
-    });
-    carreteras.forEach(o => {
-      if(o.dm == null) return;
-      o.el.setAttribute('data-nx-wd', (o.dm / maxD * ONDA_VIAJE_S).toFixed(2));
-      if(o.db < o.da) o.el.setAttribute('data-nx-rev', '1');
-    });
-    clone = live.cloneNode(true);
-  } finally {
-    host.remove();
-  }
-  clone.querySelectorAll('style,script,foreignObject,title,desc,metadata').forEach(n=>n.remove());
-  clone.querySelectorAll('path,polyline,line,polygon,rect,circle,ellipse,text,image,use').forEach(n=>{
-    if(n.closest('defs,clipPath,mask,symbol,marker,pattern')) return;
-    if(n.getAttribute('data-nx-road') === '1'){
-      const wd = n.getAttribute('data-nx-wd'), rev = n.getAttribute('data-nx-rev') === '1';
-      ['style','stroke','stroke-width','stroke-dasharray','stroke-opacity','fill','class','filter','data-nx-wd','data-nx-rev'].forEach(a=>n.removeAttribute(a));
-      n.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
-      if(wd !== null) n.setAttribute('style','--wd:' + wd + 's');
-    } else n.remove();
+    .nx-flow-road.nx-rev { animation-direction: reverse !important; }
+    @keyframes moverFlujo {
+      from { stroke-dashoffset: 0; }
+      to { stroke-dashoffset: -25; }
+    }
+  `;
+  clone.appendChild(styleEl);
+
+  // Aplicar la clase a todos los paths que parezcan carreteras (sin relleno)
+  let count = 0;
+  clone.querySelectorAll('path,polyline,line').forEach(el=>{
+    if(el.closest(SKIP)) return;
+    const fill = el.getAttribute('fill');
+    if (fill && fill !== 'none' && fill !== 'transparent') return;
+
+    const tag = el.tagName.toLowerCase();
+    const d = el.getAttribute('d') || '';
+    const isClosed = tag === 'path' && /[zZ]/.test(d);
+
+    if (!isClosed) {
+      const cls = el.getAttribute('class') || '';
+      el.setAttribute('class', cls + ' nx-flow-road');
+      count++;
+    }
   });
+
+  if (count === 0) return false;
+
   if(!clone.getAttribute('viewBox')){
-    const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
-    const w = num(clone.getAttribute('width')), h = num(clone.getAttribute('height'));
-    if(!(w>0 && h>0)) return false;
-    clone.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    const w = parseFloat(clone.getAttribute('width')) || 1000;
+    const h = parseFloat(clone.getAttribute('height')) || 1000;
+    clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
   }
-  clone.removeAttribute('width'); clone.removeAttribute('height'); clone.removeAttribute('style');
+  clone.removeAttribute('width'); 
+  clone.removeAttribute('height'); 
+  clone.removeAttribute('style');
   clone.setAttribute('class','nx-flow-svg');
-  if(!LEYENDA_MANUAL){
-    LEG_COLORES = {limite, vial}; LEG_VECTOR = true;
-    aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'), mapProcesadoActivo);
-  }
+
   L.svgOverlay(clone, DEPT_BOUNDS, {pane:'flow', interactive:false}).addTo(map);
   return true;
 }
@@ -1343,7 +1262,7 @@ async function iniciarRedVialAnimada(){
   if(!RED_VIAL_ANIMADA) return;
   try{
     if(await redVialDesdeSVG()) return;
-  }catch(e){ console.warn('[NEXUS] SVG vectorial no disponible. Asegúrate de usar un servidor local (http://) y que el archivo santacruz.svg exista.', e); }
+  }catch(e){ console.warn('[NEXUS] SVG vectorial no disponible.', e); }
   redVialPorFiltro();
 }
 function medirFluidezMapa(){
