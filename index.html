@@ -657,7 +657,7 @@
       </div>
       <div class="mp-row best" id="kpi-mejor">—</div>
       <div class="mp-row worst" id="kpi-peor">—</div>
-      <div class="mp-sub" id="kpi-mp-sub">% de cumplimiento · meta diaria al corte</div>
+      <div class="mp-sub" id="kpi-mp-sub">% de cumplimiento · recaudación / meta diaria</div>
     </div>
     <div class="kpi">
       <div class="label lb-col"><span>Vehículos cobrados</span>
@@ -1514,11 +1514,11 @@ const iconCache = {ok:null,warn:null,crit:null,off:null};
 function cumplimiento(st, periodo){
   if(periodo === 'mes'){
     if(mesPrevio === null) initMesEstaciones();
-    const esp = metaEstacion(st,'mes') * Math.max(0.02, fracMesActual());
-    return esp > 0 ? (st.mesPrevio + recaudacionDia(st)) / esp * 100 : 0;
+    const metaM = metaEstacion(st,'mes');
+    return metaM > 0 ? (st.mesPrevio + recaudacionDia(st)) / metaM * 100 : 0;
   }
-  const esp = metaEstacion(st,'dia') * Math.max(0.02, fracDiaActual());
-  return esp > 0 ? recaudacionDia(st) / esp * 100 : 0;
+  const metaD = metaEstacion(st,'dia');
+  return metaD > 0 ? recaudacionDia(st) / metaD * 100 : 0;
 }
 const claseCumpl  = p => p >= 100 ? 'ok' : p > 80 ? 'warn' : 'crit';
 const COLOR_CUMPL = {ok:'var(--green)', warn:'var(--yellow)', crit:'var(--red)'};
@@ -1708,8 +1708,8 @@ function renderEstacionesPanel(){
     const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '▬';
     const tip = `${st.nombre} · ${st.sistema}\n` +
       (esMes ? 'Acumulado mes' : 'Recaudación hoy') + `: Bs ${fmt(o.rec)}\n` +
-      (esMes ? 'Meta mensual' : 'Meta diaria') + `: Bs ${fmt(meta)} (avance total ${pct.toFixed(1)}%)\n` +
-      `Cumplimiento al corte: ${cp.toFixed(1)}%\n` +
+      (esMes ? 'Meta mensual' : 'Meta diaria') + `: Bs ${fmt(meta)}\n` +
+      `Cumplimiento: ${cp.toFixed(1)}%\n` +
       (esMes ? 'Variación vs avance esperado de la meta' : `Variación vs ayer (Bs ${fmt(st.ayerBase)})`) +
       `: ${arrow} ${Math.abs(delta).toFixed(1)}%`;
     return `<div class="stat-row" title="${tip}">` +
@@ -1950,7 +1950,6 @@ document.querySelectorAll('#sobre-seg button').forEach(b=>{
 });
 function renderKPIsExtra(){
   const n = estaciones.length;
-  const fracEsp = Math.max(0.02, fracDiaActual());
   let sobre = 0, rezag = 0, totHoy = 0, totAyer = 0, mejor = null, peor = null;
   for(let i=0;i<n;i++){
     const st = estaciones[i];
@@ -1958,7 +1957,7 @@ function renderKPIsExtra(){
     totHoy += rec; totAyer += st.ayerBase;
     const ratio = sobrePeriodo === 'mes'
       ? cumplimiento(st, 'mes') / 100
-      : (meta > 0 ? rec/(meta*fracEsp) : 0);
+      : (meta > 0 ? rec/meta : 0);
     if(ratio >= 1) sobre++; else if(ratio < 0.9) rezag++;
     if(metaEstacion(st, mpPeriodo) <= 0) continue;
     const pct = cumplimiento(st, mpPeriodo), rc = recaudacionDia(st);
@@ -1987,7 +1986,7 @@ function renderKPIsExtra(){
   bS.className = 'pj ' + (rezag === 0 ? 'ok' : rezag > 5 ? 'crit' : 'warn');
   $('kpi-mejor').innerHTML = mejor ? '<span class="n"><span class="ar">▲</span>' + mejor.st.nombre + '</span><span class="p">' + mejor.pct.toFixed(0) + '%</span>' : '<span class="n"><span class="ar">▲</span>—</span>';
   $('kpi-peor').innerHTML  = peor  ? '<span class="n"><span class="ar">▼</span>' + peor.st.nombre  + '</span><span class="p">' + peor.pct.toFixed(0)  + '%</span>' : '<span class="n"><span class="ar">▼</span>—</span>';
-  $('kpi-mp-sub').textContent = '% de cumplimiento · meta ' + (mpPeriodo === 'mes' ? 'mensual' : 'diaria') + ' al corte';
+  $('kpi-mp-sub').textContent = '% de cumplimiento · meta ' + (mpPeriodo === 'mes' ? 'mensual' : 'diaria');
   actualizarIconos();
 }
 document.querySelectorAll('#mp-seg button').forEach(b=>{
@@ -2159,7 +2158,6 @@ function renderDias(){
   if(!histDias) return;
   const H = histDias, hoyRec = totalHoy();
   const esMes = diasPeriodo === 'mes';
-  const fracEsp = Math.max(0.02, fracDiaActual());
   const cols = [];
   for(let i=0;i<7;i++){
     if(!esMes){
@@ -2192,7 +2190,7 @@ function renderDias(){
     let barCls, sub, subCls = '';
     if(!esMes){
       const meta = METAS.dia, pct = meta > 0 ? c.rec / meta * 100 : 0;
-      const ratio = c.hoy ? c.rec / (meta * fracEsp) : c.rec / meta;
+      const ratio = meta > 0 ? c.rec / meta : 0;
       barCls = ratio >= 1 ? 'ok' : ratio >= 0.9 ? 'warn' : 'crit';
       subCls = barCls; sub = pct.toFixed(0) + '% meta' + (c.hoy ? (VISTA.actual ? ' · hoy' : ' · día') : '');
     } else {
@@ -2750,7 +2748,6 @@ async function exportarExcel(){
     if(mesPrevio === null) initMesEstaciones();
     const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
     const fechaTxt = ymd(VISTA.fecha);
-    const fracEsp = Math.max(0.02, fracDiaActual());
     const wb = XLSX.utils.book_new();
     const addHoja = (nombre, filas) => {
       const ws = XLSX.utils.json_to_sheet(filas.length ? filas : [{'Sin datos':''}]);
@@ -2766,18 +2763,18 @@ async function exportarExcel(){
       const rM = (st.mesPrevio || 0) + rD, tM = (st.mesPrevioTx || 0) + tD;
       const cD = cumplimiento(st, 'dia'), cM = cumplimiento(st, 'mes');
       recDia += rD; txDia += tD; totAyer += st.ayerBase || 0;
-      if(mD > 0 && rD / (mD * fracEsp) >= 1) sobreDia++;
+      if(mD > 0 && rD / mD >= 1) sobreDia++;
       if(cM >= 100) sobreMes++;
       const f = {
         'ID': st.id, 'Estación': st.nombre, 'Ruta': st.ruta, 'Sistema': st.sistema,
         'Zona': st.zona, 'Carriles': st.carriles,
         'Meta día (Bs)': r2(mD), 'Recaudación día (Bs)': r2(rD),
-        'Cumplimiento día al corte (%)': r2(cD),
+        'Cumplimiento día (%)': r2(cD),
         'Recaudación ayer (Bs)': r2(st.ayerBase),
         'Variación vs ayer (%)': st.ayerBase > 0 ? r2((rD / st.ayerBase - 1) * 100) : '',
         'Transacciones día': tD,
         'Meta mes (Bs)': r2(mM), 'Acumulado mes (Bs)': r2(rM),
-        'Cumplimiento mes al corte (%)': r2(cM), 'Transacciones mes': tM
+        'Cumplimiento mes (%)': r2(cM), 'Transacciones mes': tM
       };
       TURNOS.forEach((t, i) => {
         const x = st.turnos[i] || {recaudacion:0, transacciones:0};
