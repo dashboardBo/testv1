@@ -2121,12 +2121,22 @@ document.addEventListener('visibilitychange', async ()=>{
 /* ==========================================================
    META VS REAL
    ========================================================== */
-const METAS = {dia:3000000, mes:90000000};
+const METAS = {dia:3000000, mes:90000000};      // totales = suma de las metas por estación
+const META_CFG = {dia:3000000, mes:90000000};   // respaldo: metas globales de la hoja Config
 let mesPrevio = null;
 
 const fmtCompacto = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
 
-const metaEstacion = (st, tipo) => METAS[tipo] * st.share;
+const metaEstacion = (st, tipo) => {
+  const v = tipo === 'mes' ? st.metaMes : st.metaDia;
+  return v > 0 ? v : META_CFG[tipo] * st.share;
+};
+function recalcularMetasTotales(){
+  const sd = estaciones.reduce((a, st) => a + metaEstacion(st, 'dia'), 0);
+  const sm = estaciones.reduce((a, st) => a + metaEstacion(st, 'mes'), 0);
+  METAS.dia = sd > 0 ? sd : META_CFG.dia;
+  METAS.mes = sm > 0 ? sm : META_CFG.mes;
+}
 function fracDiaActual(){
   if(!VISTA.actual) return 1;
   const now = new Date();
@@ -2421,7 +2431,7 @@ const ymStr = (y, m) => y + '-' + String(m+1).padStart(2,'0');
 const ymd = f => f.getFullYear() + '-' + String(f.getMonth()+1).padStart(2,'0') + '-' + String(f.getDate()).padStart(2,'0');
 const urlApi = q => API_URL + (API_URL.includes('?') ? '&' : '?') + q + (API_TOKEN ? '&token=' + encodeURIComponent(API_TOKEN) : '');
 
-const CACHE_VER = 'nexus-v4:';
+const CACHE_VER = 'nexus-v5:';
 const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
 const TTL_HIST = 24 * 3600e3;
 const TTL_INDICE = 3600e3;
@@ -2511,8 +2521,8 @@ function aplicarDatos(d){
     NCAT = CATEGORIAS.length;
     _catVer = -1; _catVal = null;
   }
-  if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
-  if(d.config && d.config.metaMes > 0) METAS.mes = d.config.metaMes;
+  if(d.config && d.config.metaDia > 0) META_CFG.dia = d.config.metaDia;
+  if(d.config && d.config.metaMes > 0) META_CFG.mes = d.config.metaMes;
 
   const nuevas = [];
   let sumaMes = 0;
@@ -2529,6 +2539,8 @@ function aplicarDatos(d){
       lon:      x.lon != null && x.lon !== '' ? Number(x.lon) : null,
       zona:     x.zona || 'Otras',
       share:    Number(x.share) || 0,
+      metaDia:  Number(x.metaDia) || 0,
+      metaMes:  Number(x.metaMes) || 0,
       ayerBase: Number(x.ayer) || 0,
       mesPrevio: Number(x.mesPrev) || 0,
       mesPrevioTx: Number(x.mesPrevTx) || 0,
@@ -2551,6 +2563,7 @@ function aplicarDatos(d){
     sincronizarMarcadores();
     actualizarIconos();
   }
+  recalcularMetasTotales();
 
 
   mesPrevio = sumaMes;
