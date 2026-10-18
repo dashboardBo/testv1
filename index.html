@@ -179,22 +179,22 @@
   .map-legend.h .lg-credit{margin:0;padding:0;border:none}
 
   /* ====================================================
-     ANIMACIÓN DE FLUJO EN CARRETERAS (NUEVO EFECTO)
+     ANIMACIÓN DE FLUJO EN CARRETERAS (FORZADO CON !IMPORTANT)
      ==================================================== */
   .nx-flow-road {
-    fill: none;
-    stroke: #ffcc00; /* Color amarillo del ejemplo */
-    stroke-width: 2.5px;
-    stroke-dasharray: 10 15; /* Guiones de 10px, espacios de 15px */
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
-    shape-rendering: optimizeSpeed;
-    animation: moverFlujo 1s linear infinite;
+    fill: none !important;
+    stroke: #ffcc00 !important; /* Color amarillo brillante */
+    stroke-width: 3px !important; /* Grosor para que resalte */
+    stroke-dasharray: 10 15 !important; /* Guiones de 10px, espacios de 15px */
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+    vector-effect: non-scaling-stroke !important;
+    shape-rendering: optimizeSpeed !important;
+    animation: moverFlujo 1s linear infinite !important;
   }
 
   .nx-flow-road.nx-rev {
-    animation-direction: reverse; /* Hace que el flujo vaya hacia el origen */
+    animation-direction: reverse !important;
   }
 
   @keyframes moverFlujo {
@@ -202,12 +202,10 @@
     to { stroke-dashoffset: -25; } /* Suma de 10 + 15 */
   }
 
-  /* Pausar animación cuando el mapa se mueve */
   .leaflet-flow-pane.nx-pausa * {
     animation-play-state: paused !important;
   }
 
-  /* Reducir velocidad si el dispositivo va lento */
   .leaflet-flow-pane.nx-lite .nx-flow-road {
     animation-duration: 2.5s !important;
   }
@@ -217,7 +215,7 @@
     pointer-events: none;
   }
 
-  /* Efecto de radar (fallback si no se puede leer el SVG) */
+  /* Fallback por si falla la lectura del archivo SVG */
   .leaflet-pane .nx-flow-img.leaflet-image-layer {
     background: transparent !important;
     pointer-events: none;
@@ -1345,7 +1343,7 @@ async function iniciarRedVialAnimada(){
   if(!RED_VIAL_ANIMADA) return;
   try{
     if(await redVialDesdeSVG()) return;
-  }catch(e){ console.warn('[NEXUS] SVG vectorial no disponible.', e); }
+  }catch(e){ console.warn('[NEXUS] SVG vectorial no disponible. Asegúrate de usar un servidor local (http://) y que el archivo santacruz.svg exista.', e); }
   redVialPorFiltro();
 }
 function medirFluidezMapa(){
