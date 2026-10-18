@@ -1156,6 +1156,26 @@ function aplicarColoresLeyenda(theme, procesado){
   st.setProperty('--lg-vial-hi', toHex(hi[0], hi[1], hi[2]));
 }
 
+let _temaTok = 0, _claroUrl = null;
+const COLOR_FRONTERA_CLARO = '#0a2a66';
+/* Celeste claro (frontera original del SVG): poco contraste sobre fondo claro */
+function esCianClaro(rgb){
+  const mx = Math.max(rgb[0],rgb[1],rgb[2]), mn = Math.min(rgb[0],rgb[1],rgb[2]);
+  const h = rgbHue(rgb);
+  return mx >= 150 && (mx-mn) >= 15 && h >= 165 && h <= 215;
+}
+function urlMapaClaro(){
+  if(_claroUrl) return Promise.resolve(_claroUrl);
+  return mapSvgTexto().then(t => {
+    const nt = t.replace(/(stroke\s*[:=]\s*["']?\s*)(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))/g, (m, pre, c) => {
+      const rgb = parseColorCSS(c);
+      return rgb && esCianClaro(rgb) ? pre + COLOR_FRONTERA_CLARO : m;
+    });
+    _claroUrl = URL.createObjectURL(new Blob([nt], {type:'image/svg+xml'}));
+    return _claroUrl;
+  }).catch(() => MAP_SRC);
+}
+
 function applyMapTheme(theme){
   theme = theme || document.documentElement.getAttribute('data-theme') || 'dark';
   if(mapOverlay){
@@ -1171,15 +1191,18 @@ function applyMapTheme(theme){
 
   mapProcesadoActivo = false;
   aplicarColoresLeyenda(theme, false);
-  mapOverlay = L.imageOverlay(MAP_SRC, DEPT_BOUNDS, {
-    interactive: false,
-    opacity: 1,
-    className: theme === 'light'
-      ? 'map-svg-fallback'
-      : 'map-svg-native'
-  }).addTo(map);
-
-  requestAnimationFrame(() => map.invalidateSize({pan:false}));
+  const token = ++_temaTok;
+  const montar = url => {
+    if(token !== _temaTok) return;
+    if(mapOverlay){ map.removeLayer(mapOverlay); mapOverlay = null; }
+    mapOverlay = L.imageOverlay(url, DEPT_BOUNDS, {
+      interactive: false,
+      opacity: 1,
+      className: theme === 'light' ? 'map-svg-fallback' : 'map-svg-native'
+    }).addTo(map);
+    requestAnimationFrame(() => map.invalidateSize({pan:false}));
+  };
+  if(theme === 'light') urlMapaClaro().then(montar); else montar(MAP_SRC);
 }
 
 (function cargarMapa(){
@@ -1277,6 +1300,7 @@ async function redVialDesdeSVG(){
       info.push({el, rgb, cerrado});
     });
 
+    info.forEach(o => { if(esCianClaro(o.rgb)) o.el.setAttribute('data-nx-cian','1'); });
     const top = m => [...m.values()].sort((a,b)=>b.n-a.n);
     const ab = top(abiertos), ce = top(cerrados);
     if(!ab.length) return false;
@@ -1395,6 +1419,14 @@ async function redVialDesdeSVG(){
       vector-effect: non-scaling-stroke !important;
     }
     /* Tema claro: azul marino profundo para contrastar con el fondo claro y las carreteras ámbar */
+    [data-theme="light"] [data-nx-cian="1"]{
+      stroke: #0a2a66 !important;
+      stroke-opacity: 1 !important;
+      stroke-width: 2.5px !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      vector-effect: non-scaling-stroke !important;
+    }
     [data-theme="light"] [data-nx-boundary="1"]{
       fill: #0a2a66 !important;
       stroke: #0a2a66 !important;
