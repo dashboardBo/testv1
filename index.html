@@ -1631,9 +1631,19 @@ function renderKPIs(){
   const alertas = cp.crit + cp.warn + cp.info;
   animar(DOM.kpiDia, kpiState.dia, recDia, 700, ' <small>Bs</small>'); kpiState.dia = recDia;
   animar(DOM.kpiMes, kpiState.mes, recMes, 900, ' <small>Bs</small>'); kpiState.mes = recMes;
-  const vehVal = Math.round(vehPeriodo === 'mes'
-    ? vehiculosMesPorCategoria(vehiculosDiaPorCategoria()).reduce((a,b)=>a+b, 0)
-    : txDia);
+
+  // FIX APLICADO: Cálculo exacto de vehículos en modo Mes (evita descuadre por redondeo de categorías)
+  let vehVal = txDia;
+  if (vehPeriodo === 'mes') {
+    let totalMes = txDia;
+    if (Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) {
+      totalMes += mesPrevioCat.reduce((a,b)=>a+b, 0);
+    } else {
+      totalMes = vehiculosMesPorCategoria(vehiculosDiaPorCategoria()).reduce((a,b)=>a+b, 0);
+    }
+    vehVal = Math.round(totalMes);
+  }
+  
   animar(DOM.kpiVehiculos, kpiState.vehiculos, vehVal, 700, ''); kpiState.vehiculos = vehVal;
   animar(DOM.kpiAlertas, kpiState.alertas, alertas, 400, ''); kpiState.alertas = alertas;
   pintarMetas(recDia, M);
@@ -2159,13 +2169,12 @@ function lruTocar(k){
 
 async function obtenerDatos(f, forzar){
   const k = ymd(f), esHoy = (k === ymd(new Date()));
-  const ttl = esHoy ? TTL_HOY : TTL_HIST; /* días pasados: se guardan en caché 24 horas */
+  const ttl = esHoy ? TTL_HOY : TTL_HIST;
   const e = memCache.get(k) || lsGet('d:' + k);
   if(e && !forzar && Date.now() - e.t < ttl){ memCache.set(k, e); return e.d; }
   if(enVuelo.has(k)) return enVuelo.get(k);
   const p = (async () => {
     try{
-      /* Siempre se envía la versión que ya tenemos: si no hubo cambios el servidor responde {sinCambios:true} */
       const desde = (e && e.d && e.d.generado) ? '&desde=' + encodeURIComponent(e.d.generado) : '';
       const r = await fetch(urlApi('fecha=' + k + desde), {cache:'no-store'});
       let d = await r.json();
@@ -2212,13 +2221,6 @@ async function cargarIndice(){
   }catch(e){ if(c) agregarFechas(c.f); }
 }
 
-/* ==========================================================
-   ACUMULADO DEL MES · VEHÍCULOS Y CONTINGENCIAS
-   Si el API no entrega el acumulado del mes (caso típico al ver
-   fechas históricas), se calcula sumando los días del mes que van
-   ANTES de la fecha seleccionada (datos reales de cada día) y se
-   le suma el día visto. Así "Mes" = total del 1 al día elegido.
-   ========================================================== */
 const ACUM = {key:null, cat:null, cont:null, cargando:null};
 const contVacio = c => !c || (!(Number(c.crit) > 0) && !(Number(c.warn) > 0) && !(Number(c.info) > 0));
 
@@ -2274,7 +2276,6 @@ async function calcularAcumMes(key){
 }
 
 function aplicarAcumMes(d){
-  /* Con el Code.gs nuevo (v>=2) el servidor ya entrega los acumulados del mes: no hacen falta llamadas extra */
   if(Number(d.v) >= 2) return;
   const key = ymd(VISTA.fecha);
   const apiCatOk  = Array.isArray(mesPrevioCat);
@@ -2332,9 +2333,6 @@ function aplicarDatos(d){
     actualizarIconos();
   }
 
-  /* Si el API no devuelve mesPrev por estación (fechas históricas), se recalcula
-     el acumulado del mes con los días anteriores de d.dias y se reparte entre
-     las estaciones proporcionalmente a su recaudación del día. */
   if(sumaMes === 0 && Array.isArray(d.dias) && d.dias.length > 0 && VISTA.fecha){
     const fRef = VISTA.fecha;
     const inicioMesTime = new Date(fRef.getFullYear(), fRef.getMonth(), 1).getTime();
@@ -2400,7 +2398,6 @@ function aplicarDatos(d){
   CONT.dia     = _normSev(d.cont && d.cont.dia);
   CONT.mesPrev = _normSev(d.cont && d.cont.mesPrev);
 
-  /* Acumulado del mes de vehículos y contingencias (ver bloque ACUM) */
   aplicarAcumMes(d);
 
   const lista = (d.alertas || []).map(a=>{
@@ -2498,7 +2495,6 @@ function iniciarMesSelect(){
   cargarIndice().then(poblarSelectores);
 }
 
-/* ====== Contingencias del día: ventana emergente ====== */
 const CONT_MODAL = {sev:'todas'};
 const SEV_NOM = {crit:'Crítica', warn:'Advertencia', info:'Regular'};
 function renderModalCont(){
@@ -2537,7 +2533,6 @@ async function iniciarTablero(){
     avisoApi('⚠ Sin API_URL configurada');
     return;
   }
-  /* Pintado inmediato con la última lectura guardada (si existe); luego se refresca en segundo plano */
   let pintado = false;
   const previo = lsGet('d:' + ymd(VISTA.fecha));
   if(previo && previo.d){ try{ aplicarDatos(previo.d); pintado = true; }catch(e){ console.warn('[Caché]', e); } }
