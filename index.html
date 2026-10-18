@@ -72,6 +72,9 @@
   .kpi.k-red::before{background:var(--flag-red)}
   .kpi.k-amber::before{background:var(--flag-yellow)}
   .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+  /* Los KPI con botones Día/Mes: el nombre arriba y los botones en la línea de abajo (sin solaparse) */
+  .kpi .label.lb-col{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:5px;margin-bottom:6px}
+  .kpi .label.lb-col > span:first-child{max-width:100%}
   .kpi .value{font-size:clamp(17px,1.45vw,24px);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;color:var(--text-strong)}
   .kpi .value small{font-size:11px;color:var(--muted);font-weight:600;margin-left:4px}
   .kpi.k-green .value{color:var(--green)}
@@ -318,21 +321,22 @@
   .cat-lg .cn{color:var(--muted);font-size:9px;font-weight:600;font-variant-numeric:tabular-nums}
   .cat-lg .vl{font-weight:800;font-variant-numeric:tabular-nums;color:var(--text-strong);min-width:28px;text-align:right}
 
-  .meta-edit{background:none;border:1px solid var(--border);color:var(--muted);font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;cursor:pointer;letter-spacing:.5px;text-transform:none;transition:all .2s}
-  .meta-edit:hover{color:var(--accent);border-color:var(--accent)}
   .meta-bar{position:relative;height:6px;background:var(--panel-2);border:1px solid var(--border);border-radius:4px;margin-top:8px}
   .meta-bar i{display:block;height:100%;border-radius:3px;background:var(--green);transition:width .8s ease,background .3s}
   .meta-bar i.ok{background:var(--green)}
   .meta-bar i.warn{background:var(--yellow)}
   .meta-bar i.crit{background:var(--red)}
   .meta-bar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text-strong);opacity:.85;border-radius:1px;transition:left .8s ease}
-  .meta-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:600;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden}
-  .meta-line .pj{font-weight:800;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  /* Salto de línea: el texto de abajo (p. ej. "Proy. cierre Bs …") ya no se oculta, va en su propia línea */
+  .meta-line{display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:10px;font-weight:600;color:var(--muted);margin-top:6px;white-space:normal}
+  .meta-line > span{max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+  .meta-line .pj{font-weight:800}
   .meta-line .pj.ok{color:var(--green)}
   .meta-line .pj.warn{color:var(--yellow)}
   .meta-line .pj.crit{color:var(--red)}
 
   .kpi .label > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kpi .label.lb-col > span:first-child{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
   .kpi .label .seg button{padding:2px 8px}
   .mp-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:clamp(11px,.85vw,14px);font-weight:800;line-height:1.35;min-width:0}
   .mp-row .n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-strong)}
@@ -393,7 +397,7 @@
   html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   #app-shell{padding-top:max(10px,env(safe-area-inset-top));padding-right:max(10px,env(safe-area-inset-right));padding-bottom:max(10px,env(safe-area-inset-bottom));padding-left:max(10px,env(safe-area-inset-left))}
 
-  @media (pointer:coarse){.seg button{padding:6px 12px}.kpi .label .seg button{padding:5px 10px}.map-filters .seg button{padding:7px 12px}.btn-action{min-height:40px;min-width:40px}.filter-btn,.meta-edit{min-height:32px}}
+  @media (pointer:coarse){.seg button{padding:6px 12px}.kpi .label .seg button{padding:5px 10px}.map-filters .seg button{padding:7px 12px}.btn-action{min-height:40px;min-width:40px}.filter-btn{min-height:32px}}
 
   @media (max-width:700px){header{padding:10px 12px}.badge-mes{font-size:10px;padding:5px 10px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kpi{padding:8px 10px;min-height:88px}.kpi .value{font-size:clamp(16px,5vw,20px)}.kpi .label{letter-spacing:.5px}.kpi:last-child:nth-child(odd){grid-column:1 / -1}.map-panel{min-height:0;height:min(72dvh,540px)}}
   @media (max-width:360px){.kpi-row{grid-template-columns:1fr}}
@@ -464,13 +468,13 @@
 
   <div class="kpi-row">
     <div class="kpi k-amber">
-      <div class="label"><span id="lbl-kpi-dia">Recaudación del día</span><button class="meta-edit" onclick="editarMeta('dia')" title="Editar meta diaria">✎ META</button></div>
+      <div class="label"><span id="lbl-kpi-dia">Recaudación del día</span></div>
       <div class="value" id="kpi-dia">0 <small>Bs</small></div>
       <div class="meta-bar"><i id="meta-dia-bar"></i><b id="meta-dia-mark" title="Avance esperado a esta hora"></b></div>
       <div class="meta-line"><span id="meta-dia-a">—</span><span id="meta-dia-b" class="pj">—</span></div>
     </div>
     <div class="kpi k-green">
-      <div class="label"><span>Acumulado del mes</span><button class="meta-edit" onclick="editarMeta('mes')" title="Editar meta mensual">✎ META</button></div>
+      <div class="label"><span>Acumulado del mes</span></div>
       <div class="value" id="kpi-mes">0 <small>Bs</small></div>
       <div class="meta-bar"><i id="meta-mes-bar"></i><b id="meta-mes-mark" title="Avance esperado a esta fecha"></b></div>
       <div class="meta-line"><span id="meta-mes-a">—</span><span id="meta-mes-b" class="pj">—</span></div>
@@ -487,7 +491,7 @@
       <div class="meta-line"><span id="kpi-sobre-a">—</span><span id="kpi-sobre-b" class="pj">—</span></div>
     </div>
     <div class="kpi k-amber">
-      <div class="label"><span>Mejor / Peor estación</span>
+      <div class="label lb-col"><span>Mejor / Peor estación</span>
         <div class="seg" id="mp-seg" title="Día: cumplimiento de la meta diaria · Mes: cumplimiento de la meta mensual">
           <button data-p="dia" class="active">Día</button>
           <button data-p="mes">Mes</button>
@@ -498,7 +502,7 @@
       <div class="mp-sub" id="kpi-mp-sub">% de cumplimiento · meta diaria al corte</div>
     </div>
     <div class="kpi">
-      <div class="label"><span>Vehículos cobrados</span>
+      <div class="label lb-col"><span>Vehículos cobrados</span>
         <div class="seg" id="veh-seg" title="Día: vehículos de hoy · Mes: acumulado del mes">
           <button data-p="dia" class="active">Día</button>
           <button data-p="mes">Mes</button>
@@ -508,7 +512,7 @@
       <div class="sub" id="kpi-vehiculos-sub">—</div>
     </div>
     <div class="kpi k-red">
-      <div class="label"><span>Contingencias</span>
+      <div class="label lb-col"><span>Contingencias</span>
         <div class="seg" id="cont-seg" title="Día: contingencias de hoy · Mes: acumulado del mes">
           <button data-p="dia" class="active">Día</button>
           <button data-p="mes">Mes</button>
@@ -1809,6 +1813,7 @@ document.addEventListener('visibilitychange', async ()=>{
 
 /* ==========================================================
    META VS REAL
+   (las metas se editan en la hoja Config de la planilla)
    ========================================================== */
 const METAS = {dia:3000000, mes:90000000};
 try{
@@ -1817,16 +1822,6 @@ try{
 }catch(e){}
 let mesPrevio = null;
 
-function editarMeta(tipo){
-  if(MODO_API){ alert('En modo planilla, las metas se cambian en la hoja Config.'); return; }
-  const v = prompt('Meta de recaudación ' + (tipo==='dia' ? 'DIARIA' : 'MENSUAL') + ' (Bs):', METAS[tipo]);
-  if(v === null) return;
-  const n = parseInt(String(v).replace(/\D/g,''), 10);
-  if(!(n > 0)) return;
-  METAS[tipo] = n;
-  try{ localStorage.setItem('nexus-metas', JSON.stringify(METAS)); }catch(e){}
-  renderKPIs();
-}
 const fmtCompacto = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
 
 const metaEstacion = (st, tipo) => METAS[tipo] * st.share;
@@ -1838,8 +1833,6 @@ function fracDiaActual(){
 function fracMesActual(){
   return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
 }
-/* FIX: acumular correctamente suma (antes solo sumaba las estaciones estimadas)
-   y eliminar la aleatoriedad para que el resultado sea determinista. */
 function initMesEstaciones(){
   const fd = fracDiaActual();
   let suma = 0;
@@ -2157,7 +2150,7 @@ const CACHE_VER = 'nexus-v2:';
 const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
 const TTL_HIST = 24 * 3600e3;
 const TTL_INDICE = 3600e3;
-const MAX_HIST_LS = 14, MAX_MEM = 20;
+const MAX_HIST_LS = 14, MAX_MEM = 40;
 const memCache = new Map(), enVuelo = new Map();
 
 function lsGet(k){ try{ const s = localStorage.getItem(CACHE_VER + k); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
@@ -2231,6 +2224,82 @@ async function cargarIndice(){
   }catch(e){ if(c) agregarFechas(c.f); }
 }
 
+/* ==========================================================
+   ACUMULADO DEL MES · VEHÍCULOS Y CONTINGENCIAS
+   Si el API no entrega el acumulado del mes (caso típico al ver
+   fechas históricas), se calcula sumando los días del mes que van
+   ANTES de la fecha seleccionada (datos reales de cada día) y se
+   le suma el día visto. Así "Mes" = total del 1 al día elegido.
+   ========================================================== */
+const ACUM = {key:null, cat:null, cont:null, cargando:null};
+const contVacio = c => !c || (!(Number(c.crit) > 0) && !(Number(c.warn) > 0) && !(Number(c.info) > 0));
+
+function resumenDia(d){
+  const cat = new Array(NCAT).fill(0);
+  Object.keys(d.estaciones || {}).forEach(id => {
+    const x = d.estaciones[id];
+    if(!x || !Array.isArray(x.turnos)) return;
+    x.turnos.forEach(t => {
+      const tx = Number(t && t.tx) || 0;
+      if(!tx) return;
+      const cats = (t.cats && t.cats.length === NCAT && t.cats.some(v => Number(v) > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
+      const suma = cats.reduce((a,b) => a + (Number(b) || 0), 0) || 1;
+      for(let i=0;i<NCAT;i++) cat[i] += tx * ((Number(cats[i]) || 0) / suma);
+    });
+  });
+  const c = (d.cont && d.cont.dia) || {};
+  return {cat, cont:{crit:Number(c.crit) || 0, warn:Number(c.warn) || 0, info:Number(c.info) || 0}};
+}
+
+async function calcularAcumMes(key){
+  ACUM.cargando = key;
+  const y = VISTA.y, m = VISTA.m, hasta = VISTA.dia, pref = ymStr(y, m) + '-';
+  let dias = [...FECHAS].filter(s => s.startsWith(pref) && +s.slice(8,10) < hasta);
+  if(!dias.length){
+    for(let i=1;i<hasta;i++) dias.push(pref + String(i).padStart(2,'0'));
+  }
+  dias.sort();
+  const cat = new Array(NCAT).fill(0), cont = {crit:0, warn:0, info:0};
+  try{
+    for(let i=0;i<dias.length;i+=4){
+      const lote = dias.slice(i, i+4);
+      const res = await Promise.all(lote.map(s => {
+        const p = s.split('-').map(Number);
+        return obtenerDatos(new Date(p[0], p[1]-1, p[2])).catch(() => null);
+      }));
+      if(key !== ymd(VISTA.fecha)) return;
+      res.forEach(dd => {
+        if(!dd) return;
+        const r = resumenDia(dd);
+        for(let k=0;k<NCAT;k++) cat[k] += r.cat[k];
+        cont.crit += r.cont.crit; cont.warn += r.cont.warn; cont.info += r.cont.info;
+      });
+    }
+  } finally {
+    if(ACUM.cargando === key) ACUM.cargando = null;
+  }
+  if(key !== ymd(VISTA.fecha)) return;
+  ACUM.key = key; ACUM.cat = cat; ACUM.cont = cont;
+  mesPrevioCat = cat.slice();
+  CONT.mesPrev = Object.assign({}, cont);
+  renderKPIs(); renderCategorias();
+}
+
+function aplicarAcumMes(d){
+  const key = ymd(VISTA.fecha);
+  const apiCatOk  = Array.isArray(mesPrevioCat);
+  const apiContOk = !contVacio(d.cont && d.cont.mesPrev);
+  const necesita = VISTA.dia > 1 && (!VISTA.actual || !apiCatOk || !apiContOk);
+  if(!necesita) return;
+  if(ACUM.key === key && ACUM.cat){
+    mesPrevioCat = ACUM.cat.slice();
+    CONT.mesPrev = Object.assign({}, ACUM.cont);
+    return;
+  }
+  if(ACUM.cargando === key) return;
+  calcularAcumMes(key);
+}
+
 function aplicarDatos(d){
   if(Array.isArray(d.fechas)) agregarFechas(d.fechas);
   if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
@@ -2273,14 +2342,9 @@ function aplicarDatos(d){
     actualizarIconos();
   }
 
-  /* ============================================================
-     FIX PRINCIPAL: si el API no devuelve mesPrev por estación
-     (devuelve 0 para fechas históricas), se recalcula el acumulado
-     del mes sumando los días del mes anteriores a la fecha vista
-     que vienen en d.dias (que sí usa el gráfico de días y sí trae
-     datos correctos). Luego se reparte ese total entre las
-     estaciones proporcionalmente a su recaudación del día.
-     ============================================================ */
+  /* Si el API no devuelve mesPrev por estación (fechas históricas), se recalcula
+     el acumulado del mes con los días anteriores de d.dias y se reparte entre
+     las estaciones proporcionalmente a su recaudación del día. */
   if(sumaMes === 0 && Array.isArray(d.dias) && d.dias.length > 0 && VISTA.fecha){
     const fRef = VISTA.fecha;
     const inicioMesTime = new Date(fRef.getFullYear(), fRef.getMonth(), 1).getTime();
@@ -2345,6 +2409,10 @@ function aplicarDatos(d){
   });
   CONT.dia     = _normSev(d.cont && d.cont.dia);
   CONT.mesPrev = _normSev(d.cont && d.cont.mesPrev);
+
+  /* Acumulado del mes de vehículos y contingencias (ver bloque ACUM) */
+  aplicarAcumMes(d);
+
   const lista = (d.alertas || []).map(a=>{
     a = Object.assign({}, a, {sev: /^(info|regular|informativa)$/i.test(a.sev) ? 'info' : /^(crit|critica|crítica)$/i.test(a.sev) ? 'crit' : /^(warn|advertencia)$/i.test(a.sev) ? 'warn' : a.sev});
     const st = estaciones.find(s=>s.id === a.est) || {nombre:a.est, sistema:''};
