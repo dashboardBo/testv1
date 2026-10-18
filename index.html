@@ -89,10 +89,13 @@
   #map{width:100%;height:100%;z-index:1;background:var(--map-bg);transition:background .5s ease}
   .leaflet-container{background:var(--map-bg) !important;font-family:inherit;transition:background .5s ease}
   .leaflet-image-layer,.leaflet-pane .leaflet-image-layer,.leaflet-pane svg.leaflet-image-layer{background:var(--map-bg) !important}
-  
-  /* Filtro CSS para modo claro (mucho más nítido que procesar con canvas) */
-  [data-theme="dark"]  .map-svg-fallback{mix-blend-mode:normal}
-  [data-theme="light"] .map-svg-fallback{filter:invert(1) hue-rotate(180deg);mix-blend-mode:multiply}
+  .leaflet-image-layer.map-svg-native,
+  .leaflet-image-layer.map-svg-fallback{image-rendering:auto}
+  [data-theme="dark"] .map-svg-native{filter:none;mix-blend-mode:normal}
+  [data-theme="light"] .map-svg-fallback{
+    filter:invert(1) hue-rotate(180deg) saturate(.88);
+    mix-blend-mode:multiply;
+  }
 
   .map-head{position:absolute;top:16px;right:20px;left:auto;z-index:1000;display:flex;align-items:center;gap:12px;background:var(--glass);padding:8px 14px;border-radius:8px;border:1px solid var(--border);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.15);border-bottom:3px solid var(--flag-yellow)}
   .map-head .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.5s infinite}
@@ -842,6 +845,7 @@ centerControl.addTo(map);
 const MAP_SRC = 'santacruz.svg';
 let mapOverlay = null, mapSrcPixels = null, mapSrcW = 0, mapSrcH = 0;
 let mapSrcTransparent = false, canvasOK = false;
+let mapProcURL = null;
 
 const toHex = (r,g,b) => '#' + [r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
 function setSvgBg(color){
@@ -884,7 +888,7 @@ function detectarFondoDesdePixeles(W, H){
 }
 
 const LEYENDA_MANUAL = null;
-let LEG_COLORES = LEYENDA_MANUAL, LEG_VECTOR = false;
+let LEG_COLORES = LEYENDA_MANUAL, mapProcesadoActivo = false, LEG_VECTOR = false;
 
 function rgbHue(c){
   const r=c[0]/255, g=c[1]/255, b=c[2]/255;
@@ -957,12 +961,12 @@ function detectarColoresDesdeTexto(){
     const res = elegirColoresLineas(cands);
     if(res){
       LEG_COLORES = res;
-      aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'));
+      aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'), mapProcesadoActivo);
     }
   }).catch(()=>{});
 }
 
-function aplicarColoresLeyenda(theme){
+function aplicarColoresLeyenda(theme, procesado){
   const st = document.documentElement.style;
   const leg = document.querySelector('.map-legend');
   if(!LEG_COLORES){
@@ -970,31 +974,68 @@ function aplicarColoresLeyenda(theme){
     if(leg) leg.classList.remove('fb');
     return;
   }
-  const fb = theme==='light' && !mapSrcTransparent;
+  const fb = theme==='light' && !procesado && !mapSrcTransparent;
   if(leg) leg.classList.toggle('fb', fb);
-  const Lm = LEG_COLORES.limite, V = LEG_COLORES.vial;
+  const conv = c => {
+    if(theme==='light' && procesado){
+      const k = 140.25 / (Math.max(c[0],c[1],c[2]) || 1);
+      return [Math.min(255,c[0]*k), Math.min(255,c[1]*k), Math.min(255,c[2]*k)];
+    }
+    return c;
+  };
+  const Lm = conv(LEG_COLORES.limite), V = conv(LEG_COLORES.vial);
   const hi = V.map(v => v + (255 - v) * 0.6);
   st.setProperty('--lg-limite',  toHex(Lm[0], Lm[1], Lm[2]));
   st.setProperty('--lg-vial',    toHex(V[0], V[1], V[2]));
   st.setProperty('--lg-vial-hi', toHex(hi[0], hi[1], hi[2]));
 }
 
+function procesarMapa(){
+  const src = mapSrcPixels.data;
+  const out = new ImageData(mapSrcW, mapSrcH);
+  const o = out.data;
+  for(let i=0;i<src.length;i+=4){
+    const r=src[i], g=src[i+1], b=src[i+2];
+    const lum = Math.max(r,g,b)/255;
+    if(lum < 0.07){ o[i+3]=0; continue; }
+    o[i]   = Math.min(255,(r/lum)*0.55);
+    o[i+1] = Math.min(255,(g/lum)*0.55);
+    o[i+2] = Math.min(255,(b/lum)*0.55);
+    o[i+3] = Math.min(255, lum*255*1.35);
+  }
+  const c = document.createElement('canvas');
+  c.width = mapSrcW; c.height = mapSrcH;
+  c.getContext('2d').putImageData(out,0,0);
+  return c.toDataURL('image/png');
+}
+
 function applyMapTheme(theme){
-  theme = theme || document.documentElement.getAttribute('data-theme');
-  if(mapOverlay){ map.removeLayer(mapOverlay); mapOverlay = null; }
+  theme = theme || document.documentElement.getAttribute('data-theme') || 'dark';
+  if(mapOverlay){
+    map.removeLayer(mapOverlay);
+    mapOverlay = null;
+  }
+
   if(mapSrcTransparent){
-    const panelColor = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim();
+    const panelColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--panel').trim();
     if(panelColor) setSvgBg(panelColor);
   }
-  
-  // NOTA: Se eliminó el "procesarMapa" en canvas que generaba pixelación.
-  // Ahora, si es light, Leaflet usa el SVG nativo y el CSS aplica "filter:invert(...) hue-rotate(...)".
-  aplicarColoresLeyenda(theme);
-  
+
+  // Mantener el SVG original como capa vectorial. No convertirlo a PNG/canvas:
+  // esa conversión fija la resolución y provoca pixelación al ampliar el mapa.
+  mapProcesadoActivo = false;
+  aplicarColoresLeyenda(theme, false);
   mapOverlay = L.imageOverlay(MAP_SRC, DEPT_BOUNDS, {
-    interactive:false, opacity:1,
-    className: (theme==='light' && !mapSrcTransparent) ? 'map-svg-fallback' : 'map-svg-native'
+    interactive: false,
+    opacity: 1,
+    className: (theme === 'light' && !mapSrcTransparent)
+      ? 'map-svg-fallback'
+      : 'map-svg-native'
   }).addTo(map);
+
+  // Recalcular el tamaño de Leaflet tras el cambio visual del tema.
+  requestAnimationFrame(() => map.invalidateSize({pan:false}));
 }
 
 (function cargarMapa(){
@@ -1057,4 +1098,1336 @@ async function redVialDesdeSVG(){
   if(!resp.ok) return false;
   const doc = new DOMParser().parseFromString(await resp.text(), 'image/svg+xml');
   const root = doc.documentElement;
-  if(!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('
+  if(!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return false;
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-99999px;top:0;width:10px;height:10px;overflow:hidden;visibility:hidden;pointer-events:none';
+  const live = document.importNode(root, true);
+  host.appendChild(live);
+  document.body.appendChild(host);
+  let clone = null, vial = null, limite = null;
+  try{
+    const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
+    const abiertos = new Map(), cerrados = new Map(), info = [];
+    live.querySelectorAll('path,polyline,line,polygon').forEach(el=>{
+      if(el.closest(SKIP)) return;
+      const cs = getComputedStyle(el);
+      if(!cs.stroke || cs.stroke === 'none' || cs.display === 'none') return;
+      if(parseFloat(cs.strokeOpacity) < 0.2) return;
+      const rgb = parseColorCSS(cs.stroke);
+      if(!rgb) return;
+      const tag = el.tagName.toLowerCase();
+      const cerrado = tag === 'polygon' || (tag === 'path' && /[zZ]/.test(el.getAttribute('d') || ''));
+      const k = rgb.join(',');
+      const mapa = cerrado ? cerrados : abiertos;
+      const o = mapa.get(k);
+      if(o) o.n++; else mapa.set(k, {rgb, n:1});
+      info.push({el, rgb, cerrado});
+    });
+    const top = m => [...m.values()].sort((a,b)=>b.n-a.n);
+    const ab = top(abiertos), ce = top(cerrados);
+    if(!ab.length) return false;
+    vial = ab[0].rgb;
+    limite = ce.length ? ce[0].rgb : ((ab.find(o => rgbDist(o.rgb, vial) > 60) || ab[0]).rgb);
+    const carreteras = info.filter(o => !o.cerrado && rgbDist(o.rgb, vial) < 60);
+    if(!carreteras.length || carreteras.length > 2500) return false;
+    carreteras.forEach(o => o.el.setAttribute('data-nx-road','1'));
+    let vb = live.viewBox && live.viewBox.baseVal;
+    if(!vb || !(vb.width > 0)){
+      const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
+      vb = {x:0, y:0, width:num(live.getAttribute('width')) || 1000, height:num(live.getAttribute('height')) || 1000};
+    }
+    const cx = vb.x + (CENTRO_RED.lon - DEPT_BOUNDS.getWest())  / (DEPT_BOUNDS.getEast()  - DEPT_BOUNDS.getWest())  * vb.width;
+    const cy = vb.y + (DEPT_BOUNDS.getNorth() - CENTRO_RED.lat) / (DEPT_BOUNDS.getNorth() - DEPT_BOUNDS.getSouth()) * vb.height;
+    const rootInv = live.getScreenCTM() ? live.getScreenCTM().inverse() : null;
+    const aRaiz = (el, x, y) => {
+      const m = rootInv && el.getScreenCTM() ? rootInv.multiply(el.getScreenCTM()) : null;
+      return m ? new DOMPoint(x, y).matrixTransform(m) : {x, y};
+    };
+    let maxD = 1;
+    function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
+    carreteras.forEach(o => {
+      try{
+        const L0 = o.el.getTotalLength(), el = o.el;
+        const a = aRaiz(el, ...Object.values(pt(el, 0))), b = aRaiz(el, ...Object.values(pt(el, L0))), c = aRaiz(el, ...Object.values(pt(el, L0/2)));
+        o.da = Math.hypot(a.x-cx, a.y-cy); o.db = Math.hypot(b.x-cx, b.y-cy);
+        o.dm = Math.min(o.da, o.db, Math.hypot(c.x-cx, c.y-cy));
+        maxD = Math.max(maxD, o.da, o.db);
+      }catch(e){ o.dm = null; }
+    });
+    carreteras.forEach(o => {
+      if(o.dm == null) return;
+      o.el.setAttribute('data-nx-wd', (o.dm / maxD * ONDA_VIAJE_S).toFixed(2));
+      if(o.db < o.da) o.el.setAttribute('data-nx-rev', '1');
+    });
+    clone = live.cloneNode(true);
+  } finally {
+    host.remove();
+  }
+  clone.querySelectorAll('style,script,foreignObject,title,desc,metadata').forEach(n=>n.remove());
+  clone.querySelectorAll('path,polyline,line,polygon,rect,circle,ellipse,text,image,use').forEach(n=>{
+    if(n.closest('defs,clipPath,mask,symbol,marker,pattern')) return;
+    if(n.getAttribute('data-nx-road') === '1'){
+      const wd = n.getAttribute('data-nx-wd'), rev = n.getAttribute('data-nx-rev') === '1';
+      ['style','stroke','stroke-width','stroke-dasharray','stroke-opacity','fill','class','filter','data-nx-wd','data-nx-rev'].forEach(a=>n.removeAttribute(a));
+      n.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
+      if(wd !== null) n.setAttribute('style','--wd:' + wd + 's');
+    } else n.remove();
+  });
+  if(!clone.getAttribute('viewBox')){
+    const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
+    const w = num(clone.getAttribute('width')), h = num(clone.getAttribute('height'));
+    if(!(w>0 && h>0)) return false;
+    clone.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+  }
+  clone.removeAttribute('width'); clone.removeAttribute('height'); clone.removeAttribute('style');
+  clone.setAttribute('class','nx-flow-svg');
+  if(!LEYENDA_MANUAL){
+    LEG_COLORES = {limite, vial}; LEG_VECTOR = true;
+    aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'), mapProcesadoActivo);
+  }
+  L.svgOverlay(clone, DEPT_BOUNDS, {pane:'flow', interactive:false}).addTo(map);
+  return true;
+}
+
+function redVialPorFiltro(){
+  const ov = L.imageOverlay(MAP_SRC, DEPT_BOUNDS, {pane:'flow', className:'nx-flow-img', interactive:false}).addTo(map);
+  const el = ov.getElement();
+  if(el){
+    el.style.setProperty('--cx', ((CENTRO_RED.lon - DEPT_BOUNDS.getWest()) / (DEPT_BOUNDS.getEast() - DEPT_BOUNDS.getWest()) * 100).toFixed(1) + '%');
+    el.style.setProperty('--cy', ((DEPT_BOUNDS.getNorth() - CENTRO_RED.lat) / (DEPT_BOUNDS.getNorth() - DEPT_BOUNDS.getSouth()) * 100).toFixed(1) + '%');
+  }
+}
+
+async function iniciarRedVialAnimada(){
+  if(!RED_VIAL_ANIMADA) return;
+  try{
+    if(await redVialDesdeSVG()) return;
+  }catch(e){ console.warn('[NEXUS] SVG vectorial no disponible.', e); }
+  redVialPorFiltro();
+}
+function medirFluidezMapa(){
+  if(!RED_VIAL_ANIMADA) return;
+  setTimeout(()=>{
+    let n = 0, t0 = 0, ult = 0, peor = 0;
+    const paso = t=>{
+      if(document.hidden){ return; }
+      if(!t0){ t0 = t; ult = t; }
+      peor = Math.max(peor, t - ult); ult = t; n++;
+      if(n < 60) requestAnimationFrame(paso);
+      else {
+        const prom = (t - t0) / (n - 1);
+        if(prom > 34) map.getPane('flow').classList.add('nx-lite');
+      }
+    };
+    requestAnimationFrame(paso);
+  }, 2500);
+}
+iniciarRedVialAnimada().then(medirFluidezMapa, medirFluidezMapa);
+
+const markersLayer = L.layerGroup().addTo(map);
+const stationMarkers = {}; const markerState = {};
+const iconCache = {ok:null,warn:null,crit:null,off:null};
+
+function cumplimiento(st, periodo){
+  if(periodo === 'mes'){
+    if(mesPrevio === null) initMesEstaciones();
+    const esp = metaEstacion(st,'mes') * Math.max(0.02, fracMesActual());
+    return esp > 0 ? (st.mesPrevio + recaudacionDia(st)) / esp * 100 : 0;
+  }
+  const esp = metaEstacion(st,'dia') * Math.max(0.02, fracDiaActual());
+  return esp > 0 ? recaudacionDia(st) / esp * 100 : 0;
+}
+const claseCumpl  = p => p >= 100 ? 'ok' : p > 80 ? 'warn' : 'crit';
+const COLOR_CUMPL = {ok:'var(--green)', warn:'var(--yellow)', crit:'var(--red)'};
+const LABEL_CUMPL = {ok:'Alto', warn:'Medio', crit:'Bajo'};
+function getIcono(estado){
+  if(iconCache[estado]) return iconCache[estado];
+  const cls = estado==='ok'?'pin-ok':estado==='warn'?'pin-warn':estado==='crit'?'pin-crit':'pin-off';
+  iconCache[estado] = L.divIcon({
+    className:'custom-pin',
+    html:`<div class="pin-container ${cls}"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7], popupAnchor:[0,-8]
+  });
+  return iconCache[estado];
+}
+function popupHTML(st){
+  const d = datosTurnoActual(st);
+  const t = getTurnoActual().turno;
+  const pc = cumplimiento(st, mapPeriodo), cc = claseCumpl(pc);
+  return `
+    <strong>${st.nombre}</strong>
+    <div style="font-size:10px;color:var(--muted);margin:4px 0 8px;font-weight:600">${st.id} · ${st.ruta} · ${st.sistema}</div>
+    <div class="prow"><span>Carriles</span><span>${st.carriles}</span></div>
+    <div class="prow"><span>Zona</span><span>${st.zona || '—'}</span></div>
+    <div class="prow"><span>Cumplimiento ${mapPeriodo==='mes'?'mes':'día'}</span><span style="color:${COLOR_CUMPL[cc]}">${pc.toFixed(0)}% · ${LABEL_CUMPL[cc]}</span></div>
+    <div class="phdr">${t.nombre} · ${t.horario}</div>
+    <div class="prow"><span>Rec. turno</span><span style="color:var(--green)">Bs ${fmt(d.recaudacion||0)}</span></div>
+    <div class="prow"><span>Transacciones</span><span>${fmt(d.transacciones||0)}</span></div>
+    <div class="phdr">Acumulado día</div>
+    <div class="prow"><span>Recaudación</span><span>Bs ${fmt(recaudacionDia(st))}</span></div>
+    <div class="prow"><span>Transacciones</span><span>${fmt(transaccionesDia(st))}</span></div>
+  `;
+}
+
+/* Crea / actualiza marcadores según las estaciones que llegan del API. */
+function sincronizarMarcadores(){
+  const idsActuales = new Set();
+  estaciones.forEach(st=>{
+    idsActuales.add(st.id);
+    const lat = Number(st.lat), lon = Number(st.lon);
+    if(!isFinite(lat) || !isFinite(lon)) return;
+    if(stationMarkers[st.id]){
+      const m = stationMarkers[st.id];
+      const p = m.getLatLng();
+      if(p.lat !== lat || p.lng !== lon) m.setLatLng([lat, lon]);
+    } else {
+      const m = L.marker([lat, lon], {icon:getIcono('off'), riseOnHover:true, keyboard:false});
+      m.bindTooltip(()=> st.nombre + ' · ' + cumplimiento(st, mapPeriodo).toFixed(0) + '%', {direction:'top', offset:[0,-10], className:'station-tooltip', opacity:.95});
+      m.bindPopup(()=>popupHTML(st), {maxWidth:260, minWidth:220});
+      m.addTo(markersLayer);
+      stationMarkers[st.id] = m;
+      markerState[st.id] = 'off';
+    }
+  });
+  Object.keys(stationMarkers).forEach(id=>{
+    if(!idsActuales.has(id)){
+      markersLayer.removeLayer(stationMarkers[id]);
+      delete stationMarkers[id];
+      delete markerState[id];
+    }
+  });
+  /* Ajusta cuántas filas por columna en la lista */
+  document.documentElement.style.setProperty('--rows', Math.max(1, Math.ceil(estaciones.length / 2)));
+  map.invalidateSize();
+}
+function actualizarIconos(){
+  let visibles = 0;
+  for(let i=0;i<estaciones.length;i++){
+    const st = estaciones[i], m = stationMarkers[st.id];
+    if(!m) continue;
+    const c = claseCumpl(cumplimiento(st, mapPeriodo));
+    if(markerState[st.id] !== c){ markerState[st.id] = c; m.setIcon(getIcono(c)); }
+    const mostrar = mapZona === 'todas' || st.zona === mapZona;
+    const puesto = markersLayer.hasLayer(m);
+    if(mostrar && !puesto) markersLayer.addLayer(m);
+    else if(!mostrar && puesto){ if(m.isPopupOpen()) m.closePopup(); markersLayer.removeLayer(m); }
+    if(mostrar) visibles++;
+  }
+  const tag = $('map-tag');
+  if(tag) tag.textContent = visibles + ' estaciones' + (mapZona === 'todas' ? '' : ' · ' + mapZona);
+}
+function ajustarAZona(){
+  if(mapZona === 'todas'){ autoFit = true; ajustarMapa(); return; }
+  const pts = estaciones.filter(s => s.zona === mapZona).map(s => [s.lat, s.lon]);
+  if(!pts.length) return;
+  ajustando = true; autoFit = false;
+  map.fitBounds(L.latLngBounds(pts), {padding:[70,70], maxZoom:9, animate:true});
+  setTimeout(()=>{ ajustando = false; }, 900);
+}
+document.querySelectorAll('#map-zona-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    mapZona = b.dataset.z;
+    document.querySelectorAll('#map-zona-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    actualizarIconos(); ajustarAZona();
+  });
+});
+document.querySelectorAll('#map-per-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    mapPeriodo = b.dataset.p;
+    document.querySelectorAll('#map-per-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    const sub = $('lg-cumpl-sub'); if(sub) sub.textContent = 'Cumplimiento · ' + (mapPeriodo === 'mes' ? 'Mes' : 'Día');
+    actualizarIconos();
+  });
+});
+setTimeout(refrescarMapa, 80);
+
+/* ==========================================================
+   FILTROS
+   ========================================================== */
+let filtroActual = 'todas';
+let ordenActual = 'desc';
+
+function setupDropdown(btnId, menuId, onSelect) {
+  const btn = $(btnId);
+  const menu = $(menuId);
+  if (!btn || !menu) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = menu.classList.contains('open');
+    document.querySelectorAll('.filter-menu.open').forEach(m => m.classList.remove('open'));
+    if (!wasOpen) menu.classList.add('open');
+  });
+  menu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+      menu.classList.remove('open');
+      onSelect(b);
+    });
+  });
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.filter-menu.open').forEach(m => m.classList.remove('open'));
+});
+
+setupDropdown('filter-btn', 'filter-menu', (btn) => {
+  filtroActual = btn.dataset.f;
+  $('filter-btn').textContent = (filtroActual === 'todas' ? 'TODAS' : filtroActual.toUpperCase()) + ' ▾';
+  renderEstacionesPanel();
+});
+setupDropdown('order-btn', 'order-menu', (btn) => {
+  ordenActual = btn.dataset.o;
+  const ETIQ_ORDEN = {desc:'▲ MAYOR', asc:'▼ MENOR', cumdesc:'▲ CUMPL.', cumasc:'▼ CUMPL.', alpha:'A → Z', alphaz:'Z → A'};
+  $('order-btn').textContent = (ETIQ_ORDEN[ordenActual] || '▲ MAYOR') + ' ▾';
+  renderEstacionesPanel();
+});
+let cumplFiltro = 'todas';
+const ETIQ_CUMPL = {todas:'CUMPL.', ok:'ALTO', warn:'MEDIO', crit:'BAJO'};
+setupDropdown('cumpl-btn', 'cumpl-menu', (btn) => {
+  cumplFiltro = btn.dataset.c;
+  $('cumpl-btn').textContent = ETIQ_CUMPL[cumplFiltro] + ' ▾';
+  renderEstacionesPanel();
+});
+
+let estPeriodo = 'dia';
+
+function renderEstacionesPanel(){
+  if(mesPrevio === null) initMesEstaciones();
+  const esMes = estPeriodo === 'mes';
+  const fracEsp = Math.max(0.02, esMes ? fracMesActual() : fracDiaActual());
+  document.querySelectorAll('.h-meta').forEach(e => { e.textContent = esMes ? 'Meta mes' : 'Meta día'; });
+
+  const filtered = estaciones.filter(st =>
+    (filtroActual === 'todas' || st.sistema === filtroActual) &&
+    (cumplFiltro === 'todas' || claseCumpl(cumplimiento(st, estPeriodo)) === cumplFiltro));
+
+  const sorted = filtered
+    .map(st => ({st, rec: esMes ? st.mesPrevio + recaudacionDia(st) : recaudacionDia(st), cp: cumplimiento(st, estPeriodo)}))
+    .sort((x,y) => {
+      if(ordenActual === 'alpha')  return x.st.nombre.localeCompare(y.st.nombre, 'es');
+      if(ordenActual === 'alphaz') return y.st.nombre.localeCompare(x.st.nombre, 'es');
+      if(ordenActual === 'cumdesc') return (y.cp - x.cp) || (y.rec - x.rec);
+      if(ordenActual === 'cumasc')  return (x.cp - y.cp) || (x.rec - y.rec);
+      return ordenActual === 'desc' ? y.rec - x.rec : x.rec - y.rec;
+    });
+
+  const half = Math.ceil(sorted.length / 2);
+
+  const rowHTML = (o, rank) => {
+    const st = o.st, col = COLOR_CUMPL[claseCumpl(cumplimiento(st, estPeriodo))];
+    const meta = metaEstacion(st, esMes ? 'mes' : 'dia');
+    const pct = meta > 0 ? o.rec / meta * 100 : 0;
+    const cp = o.cp, est = claseCumpl(cp);
+    const ref = esMes ? meta * fracEsp : st.ayerBase;
+    const delta = ref > 0 ? (o.rec/ref - 1) * 100 : 0;
+    const dir = delta > 0.5 ? 'up' : delta < -0.5 ? 'down' : 'flat';
+    const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '▬';
+    const tip = `${st.nombre} · ${st.sistema}\n` +
+      (esMes ? 'Acumulado mes' : 'Recaudación hoy') + `: Bs ${fmt(o.rec)}\n` +
+      (esMes ? 'Meta mensual' : 'Meta diaria') + `: Bs ${fmt(meta)} (avance total ${pct.toFixed(1)}%)\n` +
+      `Cumplimiento al corte: ${cp.toFixed(1)}%\n` +
+      (esMes ? 'Variación vs avance esperado de la meta' : `Variación vs ayer (Bs ${fmt(st.ayerBase)})`) +
+      `: ${arrow} ${Math.abs(delta).toFixed(1)}%`;
+    return `<div class="stat-row" title="${tip}">` +
+      `<span class="rk">${rank}</span>` +
+      `<span class="dot" style="background:${col}"></span>` +
+      `<span class="nm">${st.nombre}</span>` +
+      `<span class="bs-wrap">` +
+        `<span class="bs">Bs ${esMes ? fmtCompacto(o.rec) : fmt(o.rec)}</span>` +
+        `<span class="trend ${dir}">${arrow}</span>` +
+        `<span class="mt">/ ${fmtCompacto(meta)}</span>` +
+        `<b class="pc ${est}">${cp.toFixed(0)}%</b>` +
+      `</span></div>`;
+  };
+
+  let h1 = '', h2 = '';
+  for(let i=0;i<sorted.length;i++){
+    if(i < half) h1 += rowHTML(sorted[i], i + 1);
+    else         h2 += rowHTML(sorted[i], i + 1);
+  }
+  DOM.stationsCol1.innerHTML = h1;
+  DOM.stationsCol2.innerHTML = h2;
+}
+
+document.querySelectorAll('#est-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    estPeriodo = b.dataset.p;
+    document.querySelectorAll('#est-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderEstacionesPanel();
+  });
+});
+
+let vehPeriodo = 'dia';
+document.querySelectorAll('#veh-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    vehPeriodo = b.dataset.p;
+    document.querySelectorAll('#veh-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderKPIs();
+  });
+});
+document.querySelectorAll('#turno-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    turnoPeriodo = b.dataset.p;
+    document.querySelectorAll('#turno-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderTurnos();
+  });
+});
+document.querySelectorAll('#sys-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    sysPeriodo = b.dataset.p;
+    document.querySelectorAll('#sys-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderSistemas();
+  });
+});
+
+let catPeriodo = 'dia';
+let mesPrevioCat = null;
+const fmtVeh = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
+
+let _catVer = -1, _catVal = null;
+function vehiculosDiaPorCategoria(){
+  if(_catVer === dataVer && _catVal) return _catVal;
+  const tot = new Array(NCAT).fill(0);
+  for(let s=0;s<estaciones.length;s++){
+    const turnos = estaciones[s].turnos;
+    for(let k=0;k<turnos.length;k++){
+      const t = turnos[k];
+      if(!t.transacciones) continue;
+      const suma = t.categorias.reduce((a,b)=>a+b,0) || 1;
+      for(let i=0;i<NCAT;i++) tot[i] += t.transacciones * (t.categorias[i]/suma);
+    }
+  }
+  _catVer = dataVer; _catVal = tot;
+  return tot;
+}
+function vehiculosMesPorCategoria(dia){
+  if(mesPrevioCat === null){
+    const fracDia = fracDiaActual();
+    const totDia = dia.reduce((a,b)=>a+b,0);
+    const diaCompleto = fracDia > 0.05
+      ? totDia / fracDia
+      : estaciones.reduce((a,st)=>a + (st.carriles/4)*4000, 0);
+    const diasPrevios = diasDelMes - 1;
+    mesPrevioCat = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios * (0.93 + Math.random()*0.14));
+  }
+  return dia.map((v,i) => v + mesPrevioCat[i]);
+}
+
+function renderCategorias(){
+  const dia = vehiculosDiaPorCategoria();
+  const datos = catPeriodo === 'mes' ? vehiculosMesPorCategoria(dia) : dia;
+  const total = datos.reduce((a,b)=>a+b,0) || 1;
+  const R = 78, C = 2*Math.PI*R;
+  let svg = '', offset = 0;
+  for(let i=0;i<NCAT;i++){
+    const len = (datos[i]/total)*C;
+    svg += `<circle cx="100" cy="100" r="${R}" class="donut-seg" stroke="${CATEGORIAS[i].color}" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-offset}"/>`;
+    offset += len;
+  }
+  DOM.donutSvg.innerHTML = svg;
+  DOM.donutTotal.textContent = fmtVeh(total);
+  DOM.donutLbl.textContent = catPeriodo === 'mes' ? 'Mes' : 'Hoy';
+  let lg = '';
+  for(let i=0;i<NCAT;i++){
+    const pct = (datos[i]/total)*100;
+    lg += `<div class="cat-lg" title="${CATEGORIAS[i].nombre}: ${fmt(datos[i])} vehículos">` +
+          `<span class="dot" style="background:${CATEGORIAS[i].color}"></span>` +
+          `<span class="nm">${CATEGORIAS[i].nombre}</span>` +
+          `<span class="cn">${fmtVeh(datos[i])}</span>` +
+          `<span class="vl">${pct.toFixed(0)}%</span></div>`;
+  }
+  DOM.catLegend.innerHTML = lg;
+}
+document.querySelectorAll('#cat-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    catPeriodo = b.dataset.p;
+    document.querySelectorAll('#cat-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderCategorias();
+  });
+});
+
+let turnoPeriodo = 'dia';
+let sysPeriodo = 'dia';
+const TURNO_W = (()=>{
+  const w = [0.30+Math.random()*0.04, 0.37+Math.random()*0.04, 0.28+Math.random()*0.04];
+  const s = w[0]+w[1]+w[2];
+  return w.map(x=>x/s);
+})();
+
+function renderTurnos(){
+  if(mesPrevio === null) initMesEstaciones();
+  const esMes = turnoPeriodo === 'mes';
+  const idxActual = VISTA.actual ? turnoActualIdx() : 3; const prog = progresoTurno();
+  const recs = [0,1,2].map(i => {
+    const dia = estaciones.reduce((a,st)=>a+st.turnos[i].recaudacion, 0);
+    return esMes ? mesPrevio*TURNO_W[i] + dia : dia;
+  });
+  const totalRec = recs.reduce((a,b)=>a+b,0) || 1;
+  const maxRec = Math.max(...recs) || 1;
+  let html = '';
+  for(let i=0;i<3;i++){
+    const t = TURNOS[i];
+    const rec = recs[i];
+    let estado='pendiente';
+    if(i<idxActual) estado='cerrado'; else if(i===idxActual) estado='activo';
+    let pct, detTxt, cls;
+    if(esMes){
+      pct = rec/maxRec*100;
+      detTxt = (rec/totalRec*100).toFixed(0) + '% del mes';
+      cls = 'turno ' + t.cls + (estado==='activo' ? ' activo' : '');
+    } else {
+      pct = estado==='cerrado'?100:estado==='activo'?prog.pct:0;
+      detTxt = estado==='cerrado' ? '✓ Cerrado' : estado==='activo' ? '▶ ' + prog.pct.toFixed(0) + '%' : 'Pendiente';
+      cls = 'turno ' + t.cls + (estado==='activo'?' activo':estado==='pendiente'?' pendiente':'');
+    }
+    html += `<div class="${cls}" title="${t.nombre} · ${t.horario}\nBs ${fmt(rec)}"><div><div class="ttop"><span class="tid">T${i+1}</span><span class="th">${t.horario.slice(0,5)}-${t.horario.slice(8)}</span></div><div class="tval">Bs ${fmtCompacto(rec)}</div><div class="tdet">${detTxt}</div></div><div class="tbar"><i style="width:${pct}%;background:${t.color}"></i></div></div>`;
+  }
+  DOM.shiftChart.innerHTML = html;
+}
+function renderSistemas(){
+  if(mesPrevio === null) initMesEstaciones();
+  const esMes = sysPeriodo === 'mes';
+  const datos = SISTEMAS.map(sys => {
+    let rec = 0, count = 0;
+    for(let i=0;i<estaciones.length;i++){
+      const st = estaciones[i];
+      if(st.sistema !== sys) continue;
+      count++;
+      rec += esMes ? st.mesPrevio + recaudacionDia(st) : recaudacionDia(st);
+    }
+    return {sys, rec, count};
+  });
+  const total = datos.reduce((a,d)=>a+d.rec,0) || 1;
+  let html = '';
+  for(let s=0;s<datos.length;s++){
+    const d = datos[s], col = COLOR_SISTEMA[d.sys];
+    const monto = esMes ? fmtCompacto(d.rec) : fmt(d.rec);
+    html += `<div class="sistema" title="${d.sys}: Bs ${fmt(d.rec)}"><span class="dot" style="background:${col}"></span><div class="nm">${d.sys}<small>${d.count} est · ${(d.rec/total*100).toFixed(0)}%</small></div><span class="bs" style="color:${col}">Bs ${monto}</span></div>`;
+  }
+  DOM.sysList.innerHTML = html;
+}
+
+const kpiState = {dia:0,mes:0,vehiculos:0,alertas:0};
+function animar(elem, from, to, dur, suffix){
+  const id = elem._anim = (elem._anim || 0) + 1;
+  if(from === to){
+    const txt = fmt(to) + suffix;
+    if(elem._txt !== txt){ elem.innerHTML = txt; elem._txt = txt; }
+    return;
+  }
+  const start = performance.now();
+  function step(now){
+    if(elem._anim !== id) return;
+    const t = Math.min(1, (now-start)/dur);
+    const eased = 1 - Math.pow(1-t, 3);
+    const txt = fmt(Math.round(from + (to-from)*eased)) + suffix;
+    if(elem._txt !== txt){ elem.innerHTML = txt; elem._txt = txt; }
+    if(t<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+function renderKPIs(){
+  let recDia = 0, txDia = 0;
+  for(let i=0;i<estaciones.length;i++){
+    recDia += recaudacionDia(estaciones[i]);
+    txDia  += transaccionesDia(estaciones[i]);
+  }
+  const M = calcMetas(recDia);
+  const recMes = M.recMes;
+  const cp = contingenciasPeriodo();
+  const alertas = cp.crit + cp.warn + cp.info;
+  animar(DOM.kpiDia, kpiState.dia, recDia, 700, ' <small>Bs</small>'); kpiState.dia = recDia;
+  animar(DOM.kpiMes, kpiState.mes, recMes, 900, ' <small>Bs</small>'); kpiState.mes = recMes;
+  const vehVal = Math.round(vehPeriodo === 'mes'
+    ? vehiculosMesPorCategoria(vehiculosDiaPorCategoria()).reduce((a,b)=>a+b, 0)
+    : txDia);
+  animar(DOM.kpiVehiculos, kpiState.vehiculos, vehVal, 700, ''); kpiState.vehiculos = vehVal;
+  animar(DOM.kpiAlertas, kpiState.alertas, alertas, 400, ''); kpiState.alertas = alertas;
+  pintarMetas(recDia, M);
+  DOM.kpiVehiculosSub.textContent = (vehPeriodo === 'mes' ? 'Acumulado mes' : 'Acumulado día') + ' · ' + estaciones.length + ' estaciones';
+  DOM.kpiAlertasSub.textContent = fmt(cp.crit) + ' crít. · ' + fmt(cp.warn) + ' adv. · ' + fmt(cp.info) + ' reg.';
+  DOM.alertTag.textContent = alertasActivas.length;
+  renderKPIsExtra();
+}
+
+function renderKPIsExtra(){
+  const n = estaciones.length;
+  const fracEsp = Math.max(0.02, fracDiaActual());
+  let sobre = 0, rezag = 0, totHoy = 0, totAyer = 0, mejor = null, peor = null;
+  for(let i=0;i<n;i++){
+    const st = estaciones[i];
+    const rec = recaudacionDia(st), meta = metaEstacion(st, 'dia');
+    totHoy += rec; totAyer += st.ayerBase;
+    const ratio = meta > 0 ? rec/(meta*fracEsp) : 1;
+    if(ratio >= 1) sobre++; else if(ratio < 0.9) rezag++;
+    if(metaEstacion(st, mpPeriodo) <= 0) continue;
+    const pct = cumplimiento(st, mpPeriodo), rc = recaudacionDia(st);
+    if(!mejor || pct > mejor.pct || (pct === mejor.pct && rc > mejor.rc)) mejor = {st, pct, rc};
+    if(!peor  || pct < peor.pct  || (pct === peor.pct  && rc < peor.rc))  peor  = {st, pct, rc};
+  }
+  const dv = totAyer > 0 ? (totHoy/totAyer - 1)*100 : 0;
+  const boxV = $('kpi-var-box');
+  boxV.classList.remove('k-green','k-red','k-amber');
+  boxV.classList.add(dv >= 0 ? 'k-green' : dv < -5 ? 'k-red' : 'k-amber');
+  $('kpi-var').textContent = (dv >= 0 ? '▲ +' : '▼ ') + dv.toFixed(1).replace('.', ',') + '%';
+  $('kpi-var-sub').textContent = 'Ayer Bs ' + fmtCompacto(totAyer) + ' · Hoy Bs ' + fmtCompacto(totHoy);
+  const frac = n > 0 ? sobre / n : 0;
+  const estS = frac >= 0.75 ? 'ok' : frac >= 0.5 ? 'warn' : 'crit';
+  const boxS = $('kpi-sobre-box');
+  boxS.classList.remove('k-green','k-red','k-amber');
+  boxS.classList.add(estS === 'ok' ? 'k-green' : estS === 'warn' ? 'k-amber' : 'k-red');
+  $('kpi-sobre').innerHTML = sobre + ' <small>de ' + n + ' cumplen</small>';
+  const barS = $('kpi-sobre-bar');
+  barS.style.width = (frac*100).toFixed(1) + '%';
+  barS.className = estS;
+  $('kpi-sobre-a').textContent = (n - sobre) + ' bajo meta';
+  const bS = $('kpi-sobre-b');
+  bS.textContent = rezag + ' rezagadas (<90%)';
+  bS.className = 'pj ' + (rezag === 0 ? 'ok' : rezag > 5 ? 'crit' : 'warn');
+  $('kpi-mejor').innerHTML = mejor ? '<span class="n">▲ ' + mejor.st.nombre + '</span><span class="p">' + mejor.pct.toFixed(0) + '%</span>' : '<span class="n">▲ —</span>';
+  $('kpi-peor').innerHTML  = peor  ? '<span class="n">▼ ' + peor.st.nombre  + '</span><span class="p">' + peor.pct.toFixed(0)  + '%</span>' : '<span class="n">▼ —</span>';
+  $('kpi-mp-sub').textContent = '% de cumplimiento · meta ' + (mpPeriodo === 'mes' ? 'mensual' : 'diaria') + ' al corte';
+  actualizarIconos();
+}
+document.querySelectorAll('#mp-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    mpPeriodo = b.dataset.p;
+    document.querySelectorAll('#mp-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderKPIsExtra();
+  });
+});
+
+/* ====== CONTINGENCIAS ====== */
+const PLANTILLAS_ALERTA = [
+  {sev:'crit',ico:'⛔',t:'Carril fuera de línea',m:'Carril 3 sin respuesta'},
+  {sev:'crit',ico:'💸',t:'Recaudación cero',m:'Sin tx en 12 min'},
+  {sev:'warn',ico:'📶',t:'Conectividad intermitente',m:'Pérdida paquetes > 15%'},
+  {sev:'warn',ico:'🎫',t:'Talonario por agotarse',m:'Quedan 12 talonarios Bs 10'},
+  {sev:'warn',ico:'⚖️',t:'Diferencia de arqueo',m:'Descuadre > Bs 200'},
+  {sev:'info',ico:'📈',t:'Ticket promedio inusual',m:'Desvío +18% vs media'},
+  {sev:'info',ico:'🚗',t:'Cola vehicular',m:'Espera > 6 min por carril'},
+  {sev:'crit',ico:'🔁',t:'Transacciones duplicadas',m:'Posible doble cobro'},
+  {sev:'warn',ico:'🔧',t:'Mantenimiento preventivo',m:'Lazo inductivo errático'},
+  {sev:'info',ico:'👤',t:'Cambio de gestor',m:'Relevo en carril 2'}
+];
+const CONT = {dia:{crit:0,warn:0,info:0}, mesPrev:{crit:0,warn:0,info:0}};
+let contPeriodo = 'dia';
+function contingenciasPeriodo(){
+  const d = CONT.dia, p = CONT.mesPrev;
+  return contPeriodo === 'mes'
+    ? {crit:d.crit+p.crit, warn:d.warn+p.warn, info:d.info+p.info}
+    : {crit:d.crit, warn:d.warn, info:d.info};
+}
+document.querySelectorAll('#cont-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    contPeriodo = b.dataset.p;
+    document.querySelectorAll('#cont-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderKPIs();
+  });
+});
+
+const alertasActivas = [];
+const alertasDia = [];
+let alertasOffsetY = 0;
+function renderAlertas(){
+  const slice = alertasActivas.slice(0,12);
+  let html = '';
+  for(let i=0;i<slice.length;i++){
+    const a = slice[i];
+    const cls = 'alert ' + (a.sev === 'crit' ? 'crit' : a.sev === 'warn' ? 'warn' : 'info');
+    html += `<div class="${cls}"><div class="ico">${a.ico}</div><div class="body"><div class="t"><b>${a.estacion}</b> · ${a.t}</div><div class="m">${a.m}</div><div class="h">${a.sistema} · ${a.horaTxt}</div></div></div>`;
+  }
+  DOM.alertasInner.innerHTML = html;
+  alertasOffsetY = 0; DOM.alertasInner.style.transform = 'translateY(0)';
+  if(!$('cont-modal').hidden) renderModalCont();
+}
+function autoScrollAlertas(){
+  const wrap = DOM.alertas, inner = DOM.alertasInner;
+  const h = inner.scrollHeight, vh = wrap.clientHeight;
+  if(h <= vh) return;
+  alertasOffsetY += 110;
+  if(alertasOffsetY > h - vh + 40) alertasOffsetY = 0;
+  inner.style.transform = `translateY(${-alertasOffsetY}px)`;
+}
+function renderCabeceraTurno(){ renderMesBadge(); }
+function renderMesBadge(){
+  const mes = DTF_MES.format(VISTA.fecha);
+  document.title = 'CONTROL DE PEAJE REGIONAL SANTA CRUZ · ' + mes;
+  const lb = $('mes-label');
+  if(lb) lb.textContent = VISTA.actual ? 'Información del mes en curso ·' : 'Información histórica ·';
+  const kd = $('lbl-kpi-dia');
+  if(kd) kd.textContent = VISTA.actual ? 'Recaudación del día' : 'Recaudación · ' + String(VISTA.dia).padStart(2,'0') + '/' + String(VISTA.m+1).padStart(2,'0');
+}
+function updateClock(){
+  const now = new Date();
+  DOM.clock.textContent = DTF_RELOJ.format(now);
+  DOM.date.textContent = DTF_FECHA.format(now);
+}
+
+const Scheduler = {
+  tasks: [], running: false,
+  _arm(t){
+    t.id = setInterval(()=>{
+      try { t.fn(); } catch(e){ console.error('[Scheduler] ' + t.name, e); }
+    }, t.intervalMs);
+  },
+  add(name, fn, intervalMs){
+    const t = {name, fn, intervalMs, id:null};
+    this.tasks.push(t);
+    if(this.running) this._arm(t);
+  },
+  start(){
+    if(this.running) return;
+    this.running = true;
+    this.tasks.forEach(t => this._arm(t));
+  },
+  stop(){
+    this.running = false;
+    this.tasks.forEach(t => { if(t.id){ clearInterval(t.id); t.id = null; } });
+  }
+};
+
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.hidden){
+    Scheduler.stop(); document.body.classList.add('hidden');
+  } else {
+    Scheduler.start(); document.body.classList.remove('hidden');
+    updateClock();
+    if(MODO_API && VISTA.actual && Date.now() >= API_EST.prox) actualizarDesdeApi();
+    setTimeout(()=>map.invalidateSize(), 50);
+    if(document.fullscreenElement && !wakeLock) pedirWakeLock();
+  }
+});
+
+/* ==========================================================
+   META VS REAL
+   ========================================================== */
+const METAS = {dia:3000000, mes:90000000};
+try{
+  const m = JSON.parse(localStorage.getItem('nexus-metas')||'null');
+  if(m && m.dia>0 && m.mes>0){ METAS.dia = m.dia; METAS.mes = m.mes; }
+}catch(e){}
+let mesPrevio = null;
+
+function editarMeta(tipo){
+  if(MODO_API){ alert('En modo planilla, las metas se cambian en la hoja Config.'); return; }
+  const v = prompt('Meta de recaudación ' + (tipo==='dia' ? 'DIARIA' : 'MENSUAL') + ' (Bs):', METAS[tipo]);
+  if(v === null) return;
+  const n = parseInt(String(v).replace(/\D/g,''), 10);
+  if(!(n > 0)) return;
+  METAS[tipo] = n;
+  try{ localStorage.setItem('nexus-metas', JSON.stringify(METAS)); }catch(e){}
+  renderKPIs();
+}
+const fmtCompacto = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
+
+const metaEstacion = (st, tipo) => METAS[tipo] * st.share;
+function fracDiaActual(){
+  if(!VISTA.actual) return 1;
+  const now = new Date();
+  return (now.getHours() + now.getMinutes()/60 + now.getSeconds()/3600) / 24;
+}
+function fracMesActual(){
+  return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
+}
+function initMesEstaciones(){
+  const fd = fracDiaActual();
+  let suma = 0;
+  estaciones.forEach(st=>{
+    if(st.mesPrevio !== undefined && st.mesPrevio !== null && st.mesPrevio !== 0) return;
+    const proy = fd > 0.05 ? recaudacionDia(st)/fd : metaEstacion(st,'dia');
+    st.mesPrevio = proy * (diasDelMes-1) * (0.9 + Math.random()*0.2);
+    suma += st.mesPrevio;
+  });
+  mesPrevio = suma;
+}
+
+/* ==========================================================
+   RECAUDACIÓN · DÍA DE LA SEMANA
+   ========================================================== */
+const DIAS_SEM   = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const FACTOR_DOW = [0.94,0.92,0.96,1.00,1.13,1.10,1.04];
+const dowLun = d => (d.getDay()+6)%7;
+let histDias = null, diasPeriodo = 'semana';
+
+function totalHoy(){
+  let t = 0;
+  for(let i=0;i<estaciones.length;i++) t += recaudacionDia(estaciones[i]);
+  return t;
+}
+function initHistDias(){
+  if(mesPrevio === null) initMesEstaciones();
+  const hoy = new Date(VISTA.fecha); hoy.setHours(0,0,0,0);
+  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - dowLun(hoy));
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const desde = lunes < inicioMes ? lunes : inicioMes;
+  const dias = [];
+  for(let d = new Date(desde); d < hoy; d.setDate(d.getDate()+1)){
+    const f = new Date(d), w = dowLun(f);
+    dias.push({t:f.getTime(), dow:w, enMes:f >= inicioMes, w:FACTOR_DOW[w]*(0.93+Math.random()*0.14)});
+  }
+  const sw = dias.filter(x=>x.enMes).reduce((a,x)=>a+x.w, 0);
+  const escala = sw > 0 ? mesPrevio / sw : METAS.dia * 0.97;
+  dias.forEach(x => x.rec = escala * x.w);
+  histDias = {dias, hoy:hoy.getTime(), lunes:lunes.getTime(), dowHoy:dowLun(hoy)};
+}
+
+function renderDias(){
+  if(!histDias) initHistDias();
+  const H = histDias, hoyRec = totalHoy();
+  const esMes = diasPeriodo === 'mes';
+  const fracEsp = Math.max(0.02, fracDiaActual());
+  const cols = [];
+  for(let i=0;i<7;i++){
+    if(!esMes){
+      const t = H.lunes + i*86400000;
+      const d = new Date(t); d.setHours(0,0,0,0);
+      const tt = d.getTime();
+      if(tt > H.hoy)      cols.push({i, rec:null, futuro:true});
+      else if(tt === H.hoy) cols.push({i, rec:hoyRec, hoy:true});
+      else { const x = H.dias.find(y=>y.t === tt); cols.push({i, rec:x ? x.rec : 0}); }
+    } else {
+      let rec = 0, n = 0;
+      H.dias.forEach(x=>{ if(x.enMes && x.dow === i){ rec += x.rec; n++; } });
+      const esHoy = (i === H.dowHoy);
+      if(esHoy){ rec += hoyRec; n++; }
+      cols.push({i, rec, n, hoy:esHoy, futuro:n === 0});
+    }
+  }
+  const vals = cols.filter(c=>c.rec !== null && !c.futuro);
+  const max = Math.max(1, ...vals.map(c=>c.rec));
+  const mejor = vals.length ? vals.reduce((a,c)=> c.rec > a.rec ? c : a, vals[0]) : null;
+  const total = vals.reduce((a,c)=>a+c.rec, 0);
+  let html = '';
+  for(const c of cols){
+    const nom = DIAS_SEM[c.i];
+    if(c.futuro || c.rec === null){
+      html += `<div class="dcol futuro" title="${nom}"><span class="dn">${nom}</span><div class="dbar"><i style="height:2px"></i></div><span class="dv">—</span><span class="ds">${esMes ? 'sin días aún' : 'por venir'}</span></div>`;
+      continue;
+    }
+    const h = Math.max(4, c.rec / max * 100).toFixed(0);
+    let barCls, sub, subCls = '';
+    if(!esMes){
+      const meta = METAS.dia, pct = meta > 0 ? c.rec / meta * 100 : 0;
+      const ratio = c.hoy ? c.rec / (meta * fracEsp) : c.rec / meta;
+      barCls = ratio >= 1 ? 'ok' : ratio >= 0.9 ? 'warn' : 'crit';
+      subCls = barCls; sub = pct.toFixed(0) + '% meta' + (c.hoy ? (VISTA.actual ? ' · hoy' : ' · día') : '');
+    } else {
+      barCls = (mejor && c === mejor) ? 'best' : 'mes';
+      sub = c.n + (c.n === 1 ? ' día' : ' días') + ' · prom ' + fmtCompacto(c.rec / c.n);
+    }
+    const tip = `${nom}\n` + (esMes ? `Acumulado del mes: Bs ${fmt(c.rec)}\n${c.n} día(s) · promedio Bs ${fmt(c.rec/c.n)}` : `Recaudación: Bs ${fmt(c.rec)}${c.hoy ? ' (en curso)' : ''}`);
+    html += `<div class="dcol${c.hoy ? ' hoy' : ''}" title="${tip}"><span class="dn">${nom}</span><div class="dbar"><i class="${barCls}" style="height:${h}%"></i></div><span class="dv">${fmtCompacto(c.rec)}</span><span class="ds ${subCls}">${sub}</span></div>`;
+  }
+  $('days-grid').innerHTML = html;
+  $('days-tag').textContent = esMes ? DTF_MES.format(VISTA.fecha) : 'Bs · semana en curso';
+  $('days-foot').innerHTML =
+    `<span>${esMes ? 'Total mes' : 'Total semana'}: <b>Bs ${fmt(total)}</b></span>` +
+    (mejor ? `<span>Mejor día${esMes ? ' (acumulado)' : ''}: <b>${DIAS_SEM[mejor.i]}</b></span>` : '');
+}
+document.querySelectorAll('#days-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    diasPeriodo = b.dataset.p;
+    document.querySelectorAll('#days-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderDias();
+  });
+});
+
+function calcMetas(recDia){
+  const fracDia = fracDiaActual();
+  const diasMes = VISTA.diasMes;
+  const proyDia = fracDia > 0.05 ? recDia / fracDia : METAS.dia;
+  if(mesPrevio === null) initMesEstaciones();
+  const recMes = mesPrevio + recDia;
+  const ritmo = diasDelMes > 1 ? (mesPrevio/(diasDelMes-1) + proyDia)/2 : proyDia;
+  const proyMes = mesPrevio + proyDia + ritmo * (diasMes - diasDelMes);
+  const fracMes = (diasDelMes - 1 + fracDia) / diasMes;
+  return {recMes, proyDia, proyMes, fracDia, fracMes};
+}
+function pintarMeta(id, real, meta, fracEsperada, proy){
+  const pct = meta > 0 ? real/meta*100 : 0, ratio = meta > 0 ? proy/meta : 0;
+  const est = ratio >= 1 ? 'ok' : ratio >= 0.9 ? 'warn' : 'crit';
+  const dv = (ratio-1)*100;
+  const bar = $('meta-'+id+'-bar');
+  bar.style.width = Math.min(100,pct).toFixed(1) + '%';
+  bar.className = est;
+  $('meta-'+id+'-mark').style.left = Math.min(100, fracEsperada*100).toFixed(1) + '%';
+  $('meta-'+id+'-a').textContent = pct.toFixed(0) + '% de Bs ' + fmtCompacto(meta);
+  const b = $('meta-'+id+'-b');
+  b.textContent = 'Proy. cierre Bs ' + fmtCompacto(proy) + ' ' + (dv>=0 ? '▲ +' : '▼ ') + dv.toFixed(1) + '%';
+  b.className = 'pj ' + est;
+}
+function pintarMetas(recDia, M){
+  pintarMeta('dia', recDia,  METAS.dia, M.fracDia, M.proyDia);
+  pintarMeta('mes', M.recMes, METAS.mes, M.fracMes, M.proyMes);
+}
+
+/* ==========================================================
+   ALERTAS CRÍTICAS
+   ========================================================== */
+let appListo = false, audioCtx = null, ultimaSirena = 0, wakeLock = null;
+const ALERTAS = {on:false};
+try{ ALERTAS.on = localStorage.getItem('nexus-alertas') === '1'; }catch(e){}
+
+function initAudio(){
+  if(!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if(AC) audioCtx = new AC(); }
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tono(freq, t0, dur, vol){
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0+dur+0.02);
+}
+function sirena(repeticiones){
+  if(!audioCtx) return 0;
+  const t = audioCtx.currentTime;
+  for(let i=0;i<repeticiones;i++){ tono(880, t+i*0.5, 0.22, 0.18); tono(660, t+i*0.5+0.24, 0.22, 0.18); }
+  return repeticiones * 500;
+}
+const VOZ = {cola:[], ocupado:false, voz:null, tm:null};
+const TTS = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+function elegirVoz(){
+  if(!TTS) return;
+  const vs = speechSynthesis.getVoices();
+  VOZ.voz = vs.find(v=>/^es[-_](BO|419|MX|US|AR|CO|CL|PE|VE)/i.test(v.lang))
+         || vs.find(v=>/^es/i.test(v.lang)) || null;
+}
+if(TTS){ elegirVoz(); try{ speechSynthesis.addEventListener('voiceschanged', elegirVoz); }catch(e){ speechSynthesis.onvoiceschanged = elegirVoz; } }
+
+const aVoz = s => String(s)
+  .replace(/\btx\b/gi,'transacciones')
+  .replace(/Bs\.?\s?(\d+)/g,'$1 bolivianos')
+  .replace(/>\s?/g,'mayor a ')
+  .replace(/\+(\d)/g,'más $1')
+  .replace(/%/g,' por ciento')
+  .replace(/\bmin\b/gi,'minutos')
+  .replace(/\bvs\b/gi,'contra');
+const SEV = {
+  crit:{nom:'CRÍTICA',     voz:'Atención. Contingencia crítica',      sir:3, cls:'t-crit', ico:'⛔'},
+  warn:{nom:'ADVERTENCIA', voz:'Aviso. Contingencia de advertencia',  sir:2, cls:'t-warn', ico:'⚠️'},
+  info:{nom:'REGULAR', voz:'Aviso. Contingencia regular',   sir:1, cls:'t-info', ico:'ℹ️'}
+};
+const textoAlerta = a => `${(SEV[a.sev]||SEV.info).voz} en la estación ${a.estacion}. ${aVoz(a.t)}. ${aVoz(a.m)}.`;
+
+function hablar(txt, fin){
+  if(!TTS){ fin(); return; }
+  let hecho = false, guard = null;
+  const ok = ()=>{ if(hecho) return; hecho = true; clearTimeout(guard); fin(); };
+  try{
+    const u = new SpeechSynthesisUtterance(txt);
+    if(VOZ.voz){ u.voice = VOZ.voz; u.lang = VOZ.voz.lang; } else u.lang = 'es-ES';
+    u.rate = 0.95; u.pitch = 1; u.volume = 1;
+    u.onend = ok; u.onerror = ok;
+    guard = setTimeout(ok, 15000);
+    speechSynthesis.speak(u);
+  }catch(e){ ok(); }
+}
+function procesarColaVoz(){
+  if(VOZ.ocupado || !VOZ.cola.length || !ALERTAS.on) return;
+  VOZ.ocupado = true;
+  const a = VOZ.cola.shift();
+  mostrarToast(a);
+  const dur = sirena((SEV[a.sev]||SEV.info).sir);
+  VOZ.tm = setTimeout(()=>{
+    hablar(textoAlerta(a), ()=>{
+      VOZ.ocupado = false;
+      VOZ.tm = setTimeout(procesarColaVoz, 500);
+    });
+  }, dur + 300);
+}
+function detenerVoz(){
+  VOZ.cola.length = 0; VOZ.ocupado = false; clearTimeout(VOZ.tm);
+  if(TTS){ try{ speechSynthesis.cancel(); }catch(e){} }
+}
+function actualizarBotonAlertas(){
+  const b = $('btn-alertas');
+  b.innerHTML = ALERTAS.on ? '🔔 ON' : '🔕 OFF';
+  b.classList.toggle('on', ALERTAS.on);
+}
+async function toggleAlertas(){
+  ALERTAS.on = !ALERTAS.on;
+  try{ localStorage.setItem('nexus-alertas', ALERTAS.on ? '1' : '0'); }catch(e){}
+  if(!ALERTAS.on) detenerVoz();
+  if(ALERTAS.on){
+    initAudio(); const d = sirena(1);
+    setTimeout(()=>hablar('Alertas sonoras y de voz activadas.', ()=>{}), d + 250);
+    if('Notification' in window && Notification.permission === 'default'){
+      try{ await Notification.requestPermission(); }catch(e){}
+    }
+  }
+  actualizarBotonAlertas();
+}
+document.addEventListener('pointerdown', ()=>{ if(ALERTAS.on) initAudio(); }, {once:true});
+
+function mostrarToast(a){
+  const cont = $('toasts');
+  while(cont.children.length >= 3) cont.removeChild(cont.firstChild);
+  const el = document.createElement('div');
+  const sv = SEV[a.sev] || SEV.info;
+  el.className = 'toast ' + sv.cls;
+  el.innerHTML = `<span class="ti">${a.ico}</span><div><div class="tt">${sv.nom} · ${a.estacion} · ${a.t}</div><div class="tm">${a.m} · ${a.sistema} · ${a.horaTxt}</div></div>`;
+  const quitar = ()=>{ el.classList.add('out'); setTimeout(()=>el.remove(), 320); };
+  el.onclick = quitar;
+  cont.appendChild(el);
+  setTimeout(quitar, 8000);
+}
+function alertaCritica(a){
+  if(!ALERTAS.on) return;
+  VOZ.cola.push(a);
+  while(VOZ.cola.length > 4) VOZ.cola.shift();
+  procesarColaVoz();
+  if('Notification' in window && Notification.permission === 'granted'){
+    try{ const sv = SEV[a.sev] || SEV.info; new Notification(sv.ico + ' Contingencia ' + sv.nom.toLowerCase() + ' · ' + a.estacion, {body: a.t + ' — ' + a.m, tag: 'nexus-' + a.sev + '-' + a.estacion}); }catch(e){}
+  }
+}
+
+async function toggleFullscreen(){
+  try{
+    if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  }catch(e){ console.warn('Pantalla completa no disponible', e); }
+}
+async function pedirWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+  }catch(e){ wakeLock = null; }
+}
+document.addEventListener('fullscreenchange', async ()=>{
+  const fs = !!document.fullscreenElement;
+  document.body.classList.toggle('kiosk', fs);
+  $('btn-full').innerHTML = fs ? '🗗' : '⛶';
+  if(fs){
+    await pedirWakeLock();
+  } else if(wakeLock){
+    try{ await wakeLock.release(); }catch(e){}
+    wakeLock = null;
+  }
+  setTimeout(refrescarMapa, 150);
+});
+document.addEventListener('keydown', e=>{
+  if((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
+});
+
+let idleTimer = null;
+document.addEventListener('mousemove', ()=>{
+  const cl = document.body.classList;
+  if(cl.contains('idle')) cl.remove('idle');
+  clearTimeout(idleTimer);
+  if(document.fullscreenElement) idleTimer = setTimeout(()=>cl.add('idle'), 4000);
+}, {passive:true});
+actualizarBotonAlertas();
+
+/* ====== DATOS DESDE LA PLANILLA ====== */
+let alertasVistas = null;
+function avisoApi(msg){
+  let el = $('api-aviso');
+  if(!el){
+    el = document.createElement('div'); el.id = 'api-aviso';
+    el.style.cssText = 'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:5000;background:var(--red);color:#fff;font-weight:800;font-size:11px;padding:6px 14px;border-radius:20px;display:none';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none';
+}
+const DATOS_VACIOS = () => ({generado:new Date().toISOString(), config:{}, estaciones:{}, mesPrevCat:new Array(NCAT).fill(0),
+  mesPrevTurno:[0,0,0], dias:[], cont:{dia:{crit:0,warn:0,info:0}, mesPrev:{crit:0,warn:0,info:0}}, alertas:[]});
+
+const ymStr = (y, m) => y + '-' + String(m+1).padStart(2,'0');
+const ymd = f => f.getFullYear() + '-' + String(f.getMonth()+1).padStart(2,'0') + '-' + String(f.getDate()).padStart(2,'0');
+const urlApi = q => API_URL + (API_URL.includes('?') ? '&' : '?') + q + (API_TOKEN ? '&token=' + encodeURIComponent(API_TOKEN) : '');
+
+const CACHE_VER = 'nexus-v2:';
+const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
+const TTL_HIST = 24 * 3600e3;
+const TTL_INDICE = 3600e3;
+const MAX_HIST_LS = 14, MAX_MEM = 20;
+const memCache = new Map(), enVuelo = new Map();
+
+function lsGet(k){ try{ const s = localStorage.getItem(CACHE_VER + k); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function lsDel(k){ try{ localStorage.removeItem(CACHE_VER + k); }catch(e){} }
+function lruOrden(){ return lsGet('lru') || []; }
+function podarCache(){
+  const o = lruOrden(), n = Math.ceil(o.length / 2);
+  o.slice(0, n).forEach(k => lsDel('d:' + k));
+  try{ localStorage.setItem(CACHE_VER + 'lru', JSON.stringify(o.slice(n))); }catch(e){}
+}
+function lsSet(k, v){
+  const s = JSON.stringify(v);
+  try{ localStorage.setItem(CACHE_VER + k, s); return true; }
+  catch(e){ podarCache(); try{ localStorage.setItem(CACHE_VER + k, s); return true; }catch(e2){ return false; } }
+}
+function lruTocar(k){
+  const o = lruOrden().filter(x => x !== k); o.push(k);
+  while(o.length > MAX_HIST_LS) lsDel('d:' + o.shift());
+  lsSet('lru', o);
+}
+
+async function obtenerDatos(f, forzar){
+  const k = ymd(f), esHoy = (k === ymd(new Date()));
+  const ttl = esHoy ? TTL_HOY : TTL_HIST;
+  const e = memCache.get(k) || lsGet('d:' + k);
+  if(e && !forzar && Date.now() - e.t < ttl){ memCache.set(k, e); return e.d; }
+  if(enVuelo.has(k)) return enVuelo.get(k);
+  const p = (async () => {
+    try{
+      const r = await fetch(urlApi('fecha=' + k), {cache:'no-store'});
+      const d = await r.json();
+      if(!d || d.error) throw new Error((d && d.error) || 'respuesta vacía');
+      const ent = {t:Date.now(), d};
+      memCache.delete(k); memCache.set(k, ent);
+      while(memCache.size > MAX_MEM) memCache.delete(memCache.keys().next().value);
+      if(lsSet('d:' + k, ent)) lruTocar(k);
+      return d;
+    }catch(err){
+      if(e && !esHoy) return e.d;
+      throw err;
+    }finally{ enVuelo.delete(k); }
+  })();
+  enVuelo.set(k, p);
+  return p;
+}
+async function cargarDatos(forzar){
+  aplicarDatos(await obtenerDatos(VISTA.fecha, forzar));
+}
+
+let FECHAS = new Set();
+function agregarFechas(lista){ lista.forEach(s => { if(/^\d{4}-\d{2}-\d{2}$/.test(s)) FECHAS.add(s); }); }
+function expandirMeses(meses){
+  const hoyK = ymd(new Date()), out = [];
+  meses.forEach(mm => {
+    const p = String(mm).split('-').map(Number);
+    if(!(p[0] > 0 && p[1] > 0)) return;
+    const n = new Date(p[0], p[1], 0).getDate();
+    for(let d=1; d<=n; d++){ const s = ymStr(p[0], p[1]-1) + '-' + String(d).padStart(2,'0'); if(s <= hoyK) out.push(s); }
+  });
+  return out;
+}
+async function cargarIndice(){
+  const c = lsGet('indice');
+  if(c && Date.now() - c.t < TTL_INDICE){ agregarFechas(c.f); return; }
+  try{
+    const r = await fetch(urlApi('accion=indice'), {cache:'no-store'});
+    const d = await r.json();
+    const lista = Array.isArray(d.fechas) ? d.fechas : Array.isArray(d.meses) ? expandirMeses(d.meses) : null;
+    if(lista){ agregarFechas(lista); lsSet('indice', {t:Date.now(), f:lista}); }
+    else if(c) agregarFechas(c.f);
+  }catch(e){ if(c) agregarFechas(c.f); }
+}
+
+function aplicarDatos(d){
+  if(Array.isArray(d.fechas)) agregarFechas(d.fechas);
+  if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
+  if(d.config && d.config.metaMes > 0) METAS.mes = d.config.metaMes;
+
+  /* === Catálogo de estaciones 100% desde el Sheet === */
+  const nuevas = [];
+  let sumaMes = 0;
+  Object.keys(d.estaciones || {}).forEach(id => {
+    const x = d.estaciones[id];
+    if(!x) return;
+    nuevas.push({
+      id,
+      nombre:   x.nombre   || id,
+      ruta:     x.ruta     || '',
+      sistema:  x.sistema  || '',
+      carriles: Number(x.carriles) || 2,
+      lat:      x.lat != null && x.lat !== '' ? Number(x.lat) : null,
+      lon:      x.lon != null && x.lon !== '' ? Number(x.lon) : null,
+      zona:     x.zona || 'Otras',
+      share:    Number(x.share) || 0,
+      ayerBase: Number(x.ayer) || 0,
+      mesPrevio: Number(x.mesPrev) || 0,
+      turnos: (x.turnos && x.turnos.length ? x.turnos : [0,0,0]).map(t => {
+        const tx = t.tx || 0, rec = t.rec || 0;
+        const cats = (t.cats && t.cats.some(v => v > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
+        return {
+          recaudacion: rec, transacciones: tx, ticketProm: tx ? rec/tx : 15,
+          reportado: t.estado || 'pendiente', categorias: cats
+        };
+      }),
+      ultimaAct: new Date(d.generado || Date.now())
+    });
+    sumaMes += Number(x.mesPrev) || 0;
+  });
+
+  if(nuevas.length > 0){
+    estaciones = nuevas;
+    dataVer++;
+    sincronizarMarcadores();
+    actualizarIconos();
+  }
+  mesPrevio = sumaMes;
+
+  mesPrevioCat = (d.mesPrevCat && d.mesPrevCat.length === NCAT) ? d.mesPrevCat.slice() : null;
+  if(Array.isArray(d.mesPrevTurno) && d.mesPrevTurno.length === 3){
+    const ts = d.mesPrevTurno.reduce((a,b)=>a+b, 0);
+    if(ts > 0) d.mesPrevTurno.forEach((v,i)=>{ TURNO_W[i] = v/ts; });
+  }
+
+  const hoy = new Date(VISTA.fecha); hoy.setHours(0,0,0,0);
+  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - dowLun(hoy));
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  histDias = {
+    dias: (d.dias || []).map(z=>{ const p = z.f.split('-').map(Number), f = new Date(p[0], p[1]-1, p[2]);
+      return {t:f.getTime(), dow:dowLun(f), enMes:f >= inicioMes, w:1, rec:z.rec}; }),
+    hoy:hoy.getTime(), lunes:lunes.getTime(), dowHoy:dowLun(hoy)
+  };
+
+  CONT.dia = d.cont.dia; CONT.mesPrev = d.cont.mesPrev;
+  const lista = (d.alertas || []).map(a=>{
+    a = Object.assign({}, a, {sev: /^(info|regular|informativa)$/i.test(a.sev) ? 'info' : /^(crit|critica|crítica)$/i.test(a.sev) ? 'crit' : /^(warn|advertencia)$/i.test(a.sev) ? 'warn' : a.sev});
+    const st = estaciones.find(s=>s.id === a.est) || {nombre:a.est, sistema:''};
+    const hora = new Date(), h = String(a.hora || '0:0:0').split(':');
+    hora.setHours(+h[0] || 0, +h[1] || 0, +h[2] || 0, 0);
+    return {sev:a.sev, ico:a.sev==='crit' ? '⛔' : a.sev==='warn' ? '⚠️' : 'ℹ️', t:a.tipo, m:a.msg,
+      estacion:st.nombre, sistema:st.sistema, hora, horaTxt:DTF_HORA.format(hora), id:a.id};
+  });
+  const previas = alertasVistas;
+  alertasVistas = new Set(lista.map(a=>a.id));
+  alertasActivas.length = 0; alertasActivas.push(...lista);
+  alertasDia.length = 0; alertasDia.push(...lista); alertasDia.sort((x,y)=> y.hora - x.hora);
+  if(previas && appListo) lista.filter(a=>!previas.has(a.id)).reverse().forEach(alertaCritica);
+  dataVer++;
+}
+function refrescarTodo(){
+  renderCabeceraTurno(); renderCategorias(); renderTurnos(); renderSistemas();
+  renderEstacionesPanel(); renderKPIs(); renderDias(); renderAlertas();
+}
+const API_EST = {prox:0, idle:0, fallos:0, firma:null};
+const firmaDatos = d => JSON.stringify(d, (k, v) => k === 'generado' ? undefined : v);
+async function actualizarDesdeApi(){
+  if(!VISTA.actual || cambiandoFecha) return;
+  if(Date.now() < API_EST.prox){ refrescarTodo(); return; }
+  try{
+    const d = await obtenerDatos(VISTA.fecha, true);
+    const f = firmaDatos(d), cambio = f !== API_EST.firma;
+    API_EST.firma = f; API_EST.fallos = 0; API_EST.idle = cambio ? 0 : Math.min(API_EST.idle + 1, 2);
+    if(cambio) aplicarDatos(d);
+    avisoApi(''); refrescarTodo();
+  }catch(e){
+    API_EST.fallos++;
+    console.error('[API]', e); avisoApi('⚠ Sin conexión con la planilla · se muestran los últimos datos');
+  }
+  const mult = API_EST.fallos ? Math.min(8, 2 ** API_EST.fallos) : (1 << API_EST.idle);
+  API_EST.prox = Date.now() + API_REFRESH_MS * mult - 1500;
+}
+
+let cambiandoFecha = false;
+const bloquearSel = b => ['sel-dia','sel-mes','sel-anio'].forEach(id => { const s = $(id); if(s) s.disabled = b; });
+async function cambiarFecha(y, m, d){
+  if(cambiandoFecha) return;
+  cambiandoFecha = true; bloquearSel(true);
+  try{
+    detenerVoz();
+    setVista(y, m, d);
+    alertasVistas = null;
+    mesPrevio = null; mesPrevioCat = null; histDias = null;
+    API_EST.prox = 0; API_EST.idle = 0; API_EST.firma = null;
+    try{ await cargarDatos(); avisoApi(''); }
+    catch(e){ console.error('[API]', e); aplicarDatos(DATOS_VACIOS()); avisoApi('⚠ No se pudo leer la planilla para esta fecha'); }
+    kpiState.dia = kpiState.mes = kpiState.vehiculos = kpiState.alertas = 0;
+    refrescarTodo();
+  } finally {
+    cambiandoFecha = false; bloquearSel(false); poblarSelectores();
+  }
+}
+const MESES_ES = (() => {
+  const f = new Intl.DateTimeFormat('es-BO', {month:'long'});
+  return Array.from({length:12}, (_, i) => { const t = f.format(new Date(2026, i, 1)); return t.charAt(0).toUpperCase() + t.slice(1); });
+})();
+function listaFechas(){
+  const s = new Set(FECHAS); s.add(ymd(new Date())); s.add(ymd(VISTA.fecha));
+  return [...s].sort().reverse();
+}
+function ultimoDiaDisp(y, m){
+  const l = listaFechas().filter(s => s.startsWith(ymStr(y, m) + '-'));
+  return l.length ? +l[0].slice(8, 10) : 1;
+}
+function poblarSelectores(){
+  const sa = $('sel-anio'), sm = $('sel-mes'), sd = $('sel-dia'); if(!sa || !sm || !sd) return;
+  const l = listaFechas();
+  const anios = [...new Set(l.map(s => +s.slice(0, 4)))];
+  const meses = [...new Set(l.filter(s => +s.slice(0, 4) === VISTA.y).map(s => +s.slice(5, 7)))];
+  const dias = l.filter(s => s.startsWith(ymStr(VISTA.y, VISTA.m) + '-')).map(s => +s.slice(8, 10));
+  sa.innerHTML = anios.map(a => '<option value="' + a + '">' + a + '</option>').join('');
+  sm.innerHTML = meses.map(n => '<option value="' + (n-1) + '">' + MESES_ES[n-1] + '</option>').join('');
+  sd.innerHTML = dias.map(n => '<option value="' + n + '">' + String(n).padStart(2,'0') + '</option>').join('');
+  sa.value = VISTA.y; sm.value = VISTA.m; sd.value = VISTA.dia;
+  const tip = l.length > 1 ? 'Solo se muestran fechas con información disponible' : 'Solo hay información de la fecha actual';
+  sa.title = sm.title = sd.title = tip;
+}
+function iniciarMesSelect(){
+  $('sel-anio').addEventListener('change', e => {
+    const y = +e.target.value;
+    const l = listaFechas().filter(s => +s.slice(0, 4) === y);
+    const m = l.some(s => +s.slice(5, 7) - 1 === VISTA.m) ? VISTA.m : +l[0].slice(5, 7) - 1;
+    cambiarFecha(y, m, ultimoDiaDisp(y, m));
+  });
+  $('sel-mes').addEventListener('change', e => { const m = +e.target.value; cambiarFecha(VISTA.y, m, ultimoDiaDisp(VISTA.y, m)); });
+  $('sel-dia').addEventListener('change', e => cambiarFecha(VISTA.y, VISTA.m, +e.target.value));
+  poblarSelectores();
+  cargarIndice().then(poblarSelectores);
+}
+
+/* ====== Contingencias del día: ventana emergente ====== */
+const CONT_MODAL = {sev:'todas'};
+const SEV_NOM = {crit:'Crítica', warn:'Advertencia', info:'Regular'};
+function renderModalCont(){
+  const modal = $('cont-modal'); if(modal.hidden) return;
+  const cnt = {crit:0, warn:0, info:0};
+  alertasDia.forEach(a => { if(cnt[a.sev] !== undefined) cnt[a.sev]++; });
+  const chips = [['todas','Todas',alertasDia.length],['crit','Críticas',cnt.crit],['warn','Advertencia',cnt.warn],['info','Regulares',cnt.info]];
+  $('cont-modal-filters').innerHTML = chips.map(c =>
+    '<button data-s="' + c[0] + '" class="' + (CONT_MODAL.sev === c[0] ? 'active' : '') + '">' + c[1] + ' · ' + c[2] + '</button>').join('');
+  const lista = CONT_MODAL.sev === 'todas' ? alertasDia : alertasDia.filter(a => a.sev === CONT_MODAL.sev);
+  $('cont-modal-list').innerHTML = lista.length ? lista.map(a =>
+    '<div class="alert ' + a.sev + '"><div class="ico">' + a.ico + '</div><div class="body">' +
+    '<div class="t"><b>' + a.estacion + '</b> · ' + a.t + '</div><div class="m">' + a.m + '</div>' +
+    '<div class="h">' + a.sistema + ' · ' + a.horaTxt + ' · <span class="sv">' + (SEV_NOM[a.sev] || a.sev) + '</span></div></div></div>').join('')
+    : '<div class="modal-empty">Sin contingencias registradas</div>';
+  $('cont-modal-title').textContent = 'Contingencias del día · ' + DTF_FECHA.format(VISTA.fecha);
+}
+function abrirContingencias(){
+  CONT_MODAL.sev = 'todas';
+  $('cont-modal').hidden = false;
+  renderModalCont();
+  $('cont-modal-x').focus();
+}
+function cerrarContingencias(){ $('cont-modal').hidden = true; }
+$('cont-modal-x').addEventListener('click', cerrarContingencias);
+$('cont-modal').addEventListener('click', e => { if(e.target === $('cont-modal')) cerrarContingencias(); });
+$('cont-modal-filters').addEventListener('click', e => {
+  const b = e.target.closest('button[data-s]'); if(!b) return;
+  CONT_MODAL.sev = b.dataset.s; renderModalCont();
+});
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !$('cont-modal').hidden) cerrarContingencias(); });
+
+async function iniciarTablero(){
+  if(!MODO_API){
+    alert('⚠️ Este tablero requiere conexión con Google Sheets.\n\nConfigure la constante API_URL en index.html con la URL /exec de su Web App.');
+    avisoApi('⚠ Sin API_URL configurada');
+    return;
+  }
+  try{ await cargarDatos(); }
+  catch(e){ console.error('[API]', e); aplicarDatos(DATOS_VACIOS()); avisoApi('⚠ No se pudo leer la planilla · revise API_URL y la implementación'); }
+  appListo = true;
+  iniciarMesSelect();
+  updateClock(); renderCabeceraTurno(); renderCategorias();
+  renderTurnos(); renderSistemas(); renderEstacionesPanel(); renderKPIs(); renderDias(); renderAlertas();
+
+  Scheduler.add('clock',          updateClock,          1000);
+  Scheduler.add('cabeceraTurno',  renderCabeceraTurno,  30000);
+  Scheduler.add('datosPlanilla',  actualizarDesdeApi,   API_REFRESH_MS);
+  Scheduler.add('alertasScroll',  autoScrollAlertas,    5000);
+  Scheduler.add('refrescoTurnos', ()=>{ renderCabeceraTurno(); renderTurnos(); renderCategorias(); }, 60000);
+  Scheduler.start();
+}
+iniciarTablero();
+</script>
+</body>
+</html>
