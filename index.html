@@ -21,6 +21,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --svg-bg: #0a0f15; --map-bg: #0f1218;
     --shadow: 0 6px 24px rgba(0,0,0,.7); --glass: rgba(5,7,10,.92);
+    --boundary-color: #06b6d4; /* NUEVO: celeste del límite en modo oscuro */
   }
   [data-theme="light"] {
     --bg: #eeece3; --panel: #ffffff; --panel-2: #f6f4ec;
@@ -31,6 +32,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --map-bg: #eaedf3; --shadow: 0 4px 14px rgba(30,40,30,.10);
     --glass: rgba(255,255,255,.93);
+    --boundary-color: #0e7490; /* NUEVO: celeste oscuro del límite en modo claro */
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;width:100%;overflow:hidden;margin:0}
@@ -135,13 +137,6 @@
     mix-blend-mode: normal !important;
   }
 
-  /* ===== Tema claro: sin filtros (el SVG se muestra con sus colores originales) ===== */
-  [data-theme="light"] img.leaflet-image-layer.map-svg-fallback,
-  [data-theme="light"] img.leaflet-image-layer.map-svg-native {
-    filter: none !important;
-    mix-blend-mode: normal !important;
-  }
-
   /* La capa animada (nx-flow-img) conserva su regla base con url(#nxRoadFilter).
      No se sobrescribe aquí para no romper el chaining de filter. */
 
@@ -178,18 +173,6 @@
     filter:none!important;
   }
   [data-theme="light"] .map-legend.fb .lg-line{filter:none!important}
-  /* ===== Modo claro: "Límite Santa Cruz" en celeste oscuro + más grueso ===== */
-  [data-theme="light"] .map-legend .lg-line.glow{
-    height:5px;
-    background:#0891b2!important;
-    box-shadow:0 0 6px 2px rgba(8,145,178,.90)!important;
-    filter:none!important;
-  }
-  [data-theme="light"] .map-legend .lg-line.road{
-    height:5px;
-    box-shadow:0 0 6px 2px rgba(255,138,0,.90)!important;
-    filter:none!important;
-  }
   .map-legend .lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;white-space:nowrap}
   .map-legend .lg-group.lg-estado{flex-wrap:nowrap}
   .map-legend .lg-row{white-space:nowrap}
@@ -1309,6 +1292,16 @@ async function redVialDesdeSVG(){
       o.el.setAttribute('data-nx-road', '1');
     });
 
+    // *** NUEVO: Identificar y marcar las líneas del LÍMITE de Santa Cruz ***
+    // Primero intentamos con paths cerrados que coincidan con el color del límite.
+    let elementosLimite = info.filter(o => o.cerrado && rgbDist(o.rgb, limite) < 60);
+    if(!elementosLimite.length){
+      // Fallback: si el límite no es un path cerrado, buscar paths abiertos con color de límite
+      // (distinto del color de las carreteras) para no confundirlos con vías.
+      elementosLimite = info.filter(o => !o.cerrado && rgbDist(o.rgb, limite) < 60 && rgbDist(o.rgb, vial) > 60);
+    }
+    elementosLimite.forEach(o => o.el.setAttribute('data-nx-boundary', '1'));
+
     // Calcular dirección del flujo (desde el centro hacia afuera)
     const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
     let vb = live.viewBox && live.viewBox.baseVal;
@@ -1393,6 +1386,15 @@ async function redVialDesdeSVG(){
     @keyframes moverFlujo{
       from{ stroke-dashoffset:0; }
       to{ stroke-dashoffset:-28; } /* 6 + 22 = ciclo exacto, sin saltos */
+    }
+    /* *** NUEVO: Límite de Santa Cruz más grueso y celeste *** */
+    [data-nx-boundary="1"]{
+      stroke: var(--boundary-color, #06b6d4) !important;
+      stroke-width: 4px !important;
+      stroke-opacity: 1 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      vector-effect: non-scaling-stroke !important;
     }
   `;
   clone.appendChild(styleEl);
