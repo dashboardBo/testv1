@@ -144,16 +144,18 @@
   .map-legend.h .lg-sub{margin:0}
   .map-legend.h .lg-credit{margin:0;padding:0;border:none}
 
-  /* La red vial se anima como segmentos discontinuos que avanzan desde el centro hacia afuera. */
-  .nx-flow-road{fill:none;stroke:#ff8a00;stroke-width:2.5px;stroke-opacity:.98;stroke-dasharray:7 15;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;shape-rendering:geometricPrecision;filter:drop-shadow(0 0 2px rgba(255,138,0,.95));animation:nxFlow 1.35s linear infinite;animation-delay:var(--wd,0s)}
-  .nx-flow-road.nx-rev{animation-name:nxFlowRev}
-  @keyframes nxFlow{to{stroke-dashoffset:-44}}
-  @keyframes nxFlowRev{to{stroke-dashoffset:44}}
+  .nx-flow-road{fill:none;stroke:var(--lg-vial-hi,#fff3b0);stroke-width:2px;stroke-opacity:.3;stroke-dasharray:6 18;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;shape-rendering:optimizeSpeed;animation:nxFlow .9s steps(8) infinite,nxWave 4.8s steps(36) infinite;animation-delay:0s,var(--wd,0s)}
+  .nx-flow-road.nx-rev{animation-name:nxFlowRev,nxWave}
+  @keyframes nxFlow{to{stroke-dashoffset:-24}}
+  @keyframes nxFlowRev{to{stroke-dashoffset:24}}
+  @keyframes nxWave{0%{stroke-opacity:1}14%{stroke-opacity:1}38%{stroke-opacity:.3}100%{stroke-opacity:.3}}
   .leaflet-flow-pane.nx-pausa *{animation-play-state:paused!important}
-  .leaflet-flow-pane.nx-lite .nx-flow-road{animation-duration:2.1s!important;stroke-width:2px}
+  .leaflet-flow-pane.nx-lite .nx-flow-road{animation-duration:1.8s,6s!important;animation-timing-function:steps(6),steps(12)!important}
+  .leaflet-flow-pane.nx-lite .nx-flow-img{animation-duration:7s!important}
   .leaflet-pane svg.nx-flow-svg.leaflet-image-layer{background:transparent!important;pointer-events:none}
-  /* Sin SVG vectorial no se dibuja el antiguo degradado radial: evitamos mostrar una animación distinta. */
-  .leaflet-pane .nx-flow-img.leaflet-image-layer{display:none!important}
+  .leaflet-pane .nx-flow-img.leaflet-image-layer{background:transparent!important;pointer-events:none;filter:url(#nxRoadFilter);opacity:.95;-webkit-mask-image:radial-gradient(circle at var(--cx,33%) var(--cy,61%),transparent calc(var(--nx-r) - 22%),#000 var(--nx-r),transparent calc(var(--nx-r) + 3%));mask-image:radial-gradient(circle at var(--cx,33%) var(--cy,61%),transparent calc(var(--nx-r) - 22%),#000 var(--nx-r),transparent calc(var(--nx-r) + 3%));animation:nxRing 4.8s steps(36) infinite}
+  @property --nx-r{syntax:'<percentage>';inherits:false;initial-value:0%}
+  @keyframes nxRing{from{--nx-r:-6%}to{--nx-r:125%}}
 
   .pin-container{width:14px;height:14px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 2px 5px rgba(0,0,0,.55);transition:transform .2s ease,box-shadow .2s ease}
   .leaflet-marker-icon:hover .pin-container{transform:scale(1.8);box-shadow:0 0 12px currentColor}
