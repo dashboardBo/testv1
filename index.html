@@ -127,16 +127,31 @@
   .leaflet-image-layer,.leaflet-pane .leaflet-image-layer,.leaflet-pane svg.leaflet-image-layer{background:var(--map-bg) !important}
   .leaflet-image-layer.map-svg-native,
   .leaflet-image-layer.map-svg-fallback{image-rendering:auto}
+
+  /* ===== Tema oscuro: sin filtros ===== */
   [data-theme="dark"] .map-svg-native,
-  [data-theme="dark"] .map-svg-fallback{
-    filter:none;
-    mix-blend-mode:normal;
+  [data-theme="dark"] .map-svg-fallback {
+    filter: none !important;
+    mix-blend-mode: normal !important;
   }
-  /* En tema claro se invierte el SVG completo: el fondo oscuro pasa a claro.
-     No usar multiply, porque conserva las zonas negras y el mapa sigue oscuro. */
-  [data-theme="light"] .map-svg-fallback{
-    filter:invert(1) hue-rotate(180deg) saturate(.88);
-    mix-blend-mode:normal;
+  [data-theme="dark"] .nx-flow-img {
+    mix-blend-mode: normal !important;
+  }
+
+  /* ===== Tema claro: invertir mapa principal y capa animada ===== */
+  [data-theme="light"] img.leaflet-image-layer.map-svg-fallback,
+  [data-theme="light"] img.leaflet-image-layer.map-svg-native {
+    filter: invert(1) hue-rotate(180deg) saturate(.88) !important;
+    mix-blend-mode: normal !important;
+  }
+  [data-theme="light"] .leaflet-flow-pane img.nx-flow-img {
+    filter: url(#nxRoadFilter) invert(1) hue-rotate(180deg) saturate(.88) !important;
+    mix-blend-mode: normal !important;
+  }
+
+  /* ===== Fondo del mapa en modo claro ===== */
+  [data-theme="light"] .leaflet-container {
+    background: #eaedf3 !important;
   }
 
   .map-head{position:absolute;top:16px;right:20px;left:auto;z-index:1000;display:flex;align-items:center;gap:12px;background:var(--glass);padding:8px 14px;border-radius:8px;border:1px solid var(--border);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.15);border-bottom:3px solid var(--flag-yellow)}
