@@ -32,7 +32,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --map-bg: #eaedf3; --shadow: 0 4px 14px rgba(30,40,30,.10);
     --glass: rgba(255,255,255,.93);
-    --boundary-color: #0e7490;
+    --boundary-color: #155e75;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;width:100%;overflow:hidden;margin:0}
@@ -1354,7 +1354,7 @@ async function redVialDesdeSVG(){
     .nx-flow-road{
       fill:none !important;
       stroke:#ffcc00 !important;
-      stroke-width:1.6px !important;
+      stroke-width:2px !important;
       stroke-opacity:.9 !important;
       stroke-dasharray:6 22 !important;
       stroke-linecap:round !important;
@@ -1365,7 +1365,7 @@ async function redVialDesdeSVG(){
     .nx-base-road{
       fill:none !important;
       stroke:#ffcc00 !important;
-      stroke-width:.7px !important;
+      stroke-width:.9px !important;
       stroke-opacity:.55 !important;
       stroke-linecap:round !important;
       stroke-linejoin:round !important;
@@ -1382,10 +1382,10 @@ async function redVialDesdeSVG(){
     }
     /* *** LÍMITE de Santa Cruz: una sola línea sólida celeste oscuro *** */
     [data-nx-boundary="1"]{
-      fill: var(--boundary-color, #06b6d4) !important;
+      fill: #155e75 !important;
       fill-opacity: 1 !important;
       fill-rule: nonzero !important;
-      stroke: var(--boundary-color, #06b6d4) !important;
+      stroke: #155e75 !important;
       stroke-width: 4px !important;
       stroke-opacity: 1 !important;
       stroke-linecap: round !important;
