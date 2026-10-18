@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CONTROL DE PEAJE REGIONAL SANTA CRUZ</title>
 
-<link rel="preconnect" href="https://unpkg.com" crossorigin>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
 
 <style>
   :root, [data-theme="dark"] {
@@ -73,7 +76,7 @@
   .kpi.k-amber::before{background:var(--flag-yellow)}
   .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
   /* Los KPI con botones Día/Mes: el nombre arriba y los botones en la línea de abajo (sin solaparse) */
-  .kpi .label.lb-col{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:5px;margin-bottom:6px}
+  .kpi .label.lb-col{flex-direction:column-reverse;align-items:flex-start;justify-content:flex-start;gap:5px;margin-bottom:6px}
   .kpi .label.lb-col > span:first-child{max-width:100%}
   .kpi .value{font-size:clamp(17px,1.45vw,24px);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.5px;color:var(--text-strong)}
   .kpi .value small{font-size:11px;color:var(--muted);font-weight:600;margin-left:4px}
@@ -438,7 +441,7 @@
 
   <header>
     <div class="brand">
-      <img class="logo" src="https://lh3.googleusercontent.com/d/1namSbBxlJv-2ULik4_zISe-MJ0xquBZS" alt="Logo" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+      <img class="logo" src="https://lh3.googleusercontent.com/d/1namSbBxlJv-2ULik4_zISe-MJ0xquBZS" alt="Logo" width="140" height="42" decoding="async" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.style.display='none'">
       <div>
         <h1>CONTROL DE PEAJE REGIONAL SANTA CRUZ</h1>
         <small>Estado Plurinacional de Bolivia · Santa Cruz · Red Vial Fundamental</small>
@@ -684,7 +687,7 @@
   <div id="toasts" aria-live="assertive"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
 'use strict';
 
@@ -694,7 +697,7 @@ const $ = id => document.getElementById(id);
    PEGA AQUÍ la URL /exec de tu Web App. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';
 const API_TOKEN = '';
-const API_REFRESH_MS = 60000;
+const API_REFRESH_MS = 90000; // base; se alarga solo (hasta x3) si los datos no cambian
 const MODO_API = !!API_URL;
 
 const NF = new Intl.NumberFormat('es-BO',{maximumFractionDigits:0});
@@ -856,6 +859,9 @@ centerControl.onAdd = function() {
 centerControl.addTo(map);
 
 const MAP_SRC = 'santacruz.svg';
+/* El SVG se descarga como texto UNA sola vez y se reutiliza */
+let _mapSvgTexto = null;
+const mapSvgTexto = () => _mapSvgTexto || (_mapSvgTexto = fetch(MAP_SRC).then(r => { if(!r.ok) throw new Error('svg'); return r.text(); }));
 let mapOverlay = null, mapSrcPixels = null, mapSrcW = 0, mapSrcH = 0;
 let mapSrcTransparent = false, canvasOK = false;
 let mapProcURL = null;
@@ -961,7 +967,7 @@ function parseColorCSS(t){
 }
 function detectarColoresDesdeTexto(){
   if(LEYENDA_MANUAL || LEG_VECTOR || LEG_COLORES) return;
-  fetch(MAP_SRC).then(r=>r.text()).then(t=>{
+  mapSvgTexto().then(t=>{
     const cnt = new Map();
     const re = /stroke\s*[:=]\s*["']?\s*(#[0-9a-fA-F]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\))/g;
     let m;
@@ -1053,13 +1059,16 @@ function applyMapTheme(theme){
   img.crossOrigin = 'anonymous';
   img.onload = function(){
     try{
-      const nW = img.naturalWidth  || img.width  || 2200;
-      const nH = img.naturalHeight || img.height || 1867;
+      /* Análisis en un canvas reducido (~480 px): evita leer ~16 MB de píxeles */
+      const nW0 = img.naturalWidth  || img.width  || 2200;
+      const nH0 = img.naturalHeight || img.height || 1867;
+      const esc = Math.min(1, 480 / nW0);
+      const nW = Math.max(1, Math.round(nW0 * esc)), nH = Math.max(1, Math.round(nH0 * esc));
       mapSrcW = nW; mapSrcH = nH;
       const c = document.createElement('canvas');
       c.width = nW; c.height = nH;
       const ctx = c.getContext('2d', {willReadFrequently:true});
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, nW, nH);
       mapSrcPixels = ctx.getImageData(0, 0, nW, nH);
       canvasOK = true;
       const hex = detectarFondoDesdePixeles(nW, nH);
@@ -1099,14 +1108,12 @@ legendControl.onAdd = function(){
 };
 legendControl.addTo(map);
 
-const RED_VIAL_ANIMADA = true;
+const RED_VIAL_ANIMADA = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const CENTRO_RED = {lat:-17.78, lon:-63.18};
 const ONDA_VIAJE_S = 3.2;
 
 async function redVialDesdeSVG(){
-  const resp = await fetch(MAP_SRC);
-  if(!resp.ok) return false;
-  const doc = new DOMParser().parseFromString(await resp.text(), 'image/svg+xml');
+  const doc = new DOMParser().parseFromString(await mapSvgTexto(), 'image/svg+xml');
   const root = doc.documentElement;
   if(!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return false;
   const host = document.createElement('div');
@@ -1232,7 +1239,10 @@ function medirFluidezMapa(){
     requestAnimationFrame(paso);
   }, 2500);
 }
-iniciarRedVialAnimada().then(medirFluidezMapa, medirFluidezMapa);
+/* La red vial animada se inicia en tiempo ocioso para no competir con el primer pintado */
+(window.requestIdleCallback ? (f => requestIdleCallback(f, {timeout:2500})) : (f => setTimeout(f, 600)))(() => {
+  iniciarRedVialAnimada().then(medirFluidezMapa, medirFluidezMapa);
+});
 
 const markersLayer = L.layerGroup().addTo(map);
 const stationMarkers = {}; const markerState = {};
@@ -2150,7 +2160,7 @@ const CACHE_VER = 'nexus-v2:';
 const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
 const TTL_HIST = 24 * 3600e3;
 const TTL_INDICE = 3600e3;
-const MAX_HIST_LS = 14, MAX_MEM = 40;
+const MAX_HIST_LS = 35, MAX_MEM = 40;
 const memCache = new Map(), enVuelo = new Map();
 
 function lsGet(k){ try{ const s = localStorage.getItem(CACHE_VER + k); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
@@ -2180,8 +2190,11 @@ async function obtenerDatos(f, forzar){
   if(enVuelo.has(k)) return enVuelo.get(k);
   const p = (async () => {
     try{
-      const r = await fetch(urlApi('fecha=' + k), {cache:'no-store'});
-      const d = await r.json();
+      /* Para "hoy" se envía la versión que ya tenemos: si no hubo cambios el servidor responde {sinCambios:true} */
+      const desde = (esHoy && e && e.d && e.d.generado) ? '&desde=' + encodeURIComponent(e.d.generado) : '';
+      const r = await fetch(urlApi('fecha=' + k + desde), {cache:'no-store'});
+      let d = await r.json();
+      if(d && d.sinCambios && e && e.d) d = e.d;
       if(!d || d.error) throw new Error((d && d.error) || 'respuesta vacía');
       const ent = {t:Date.now(), d};
       memCache.delete(k); memCache.set(k, ent);
@@ -2286,6 +2299,8 @@ async function calcularAcumMes(key){
 }
 
 function aplicarAcumMes(d){
+  /* Con el Code.gs nuevo (v>=2) el servidor ya entrega los acumulados del mes: no hacen falta llamadas extra */
+  if(Number(d.v) >= 2) return;
   const key = ymd(VISTA.fecha);
   const apiCatOk  = Array.isArray(mesPrevioCat);
   const apiContOk = !contVacio(d.cont && d.cont.mesPrev);
@@ -2385,7 +2400,7 @@ function aplicarDatos(d){
 
   mesPrevio = sumaMes;
 
-  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && d.mesPrevCat.some(v => Number(v) > 0)
+  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && (d.mesPrevCat.some(v => Number(v) > 0) || Number(d.v) >= 2)
     ? d.mesPrevCat.map(v => Number(v) || 0)
     : null;
   if(Array.isArray(d.mesPrevTurno) && d.mesPrevTurno.length === 3){
@@ -2447,7 +2462,7 @@ async function actualizarDesdeApi(){
     API_EST.fallos++;
     console.error('[API]', e); avisoApi('⚠ Sin conexión con la planilla · se muestran los últimos datos');
   }
-  const mult = API_EST.fallos ? Math.min(4, 2 ** Math.min(API_EST.fallos - 1, 2)) : 1;
+  const mult = API_EST.fallos ? Math.min(4, 2 ** Math.min(API_EST.fallos - 1, 2)) : (1 + API_EST.idle);
   API_EST.prox = Date.now() + API_REFRESH_MS * mult;
 }
 
@@ -2547,8 +2562,14 @@ async function iniciarTablero(){
     avisoApi('⚠ Sin API_URL configurada');
     return;
   }
-  try{ await cargarDatos(); }
-  catch(e){ console.error('[API]', e); aplicarDatos(DATOS_VACIOS()); avisoApi('⚠ No se pudo leer la planilla · revise API_URL y la implementación'); }
+  /* Pintado inmediato con la última lectura guardada (si existe); luego se refresca en segundo plano */
+  let pintado = false;
+  const previo = lsGet('d:' + ymd(VISTA.fecha));
+  if(previo && previo.d){ try{ aplicarDatos(previo.d); pintado = true; }catch(e){ console.warn('[Caché]', e); } }
+  if(!pintado){
+    try{ await cargarDatos(); }
+    catch(e){ console.error('[API]', e); aplicarDatos(DATOS_VACIOS()); avisoApi('⚠ No se pudo leer la planilla · revise API_URL y la implementación'); }
+  }
   appListo = true;
   iniciarMesSelect();
   updateClock(); renderCabeceraTurno(); renderCategorias();
@@ -2560,6 +2581,7 @@ async function iniciarTablero(){
   Scheduler.add('alertasScroll',  autoScrollAlertas,    5000);
   Scheduler.add('refrescoTurnos', ()=>{ renderCabeceraTurno(); renderTurnos(); renderCategorias(); }, 60000);
   Scheduler.start();
+  if(pintado){ API_EST.prox = 0; actualizarDesdeApi(); }
 }
 iniciarTablero();
 </script>
