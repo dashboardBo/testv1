@@ -112,8 +112,7 @@
   .leaflet-bar a{background:var(--panel)!important;color:var(--text)!important;border-color:var(--border)!important;font-weight:700!important}
   .leaflet-bar a:hover{background:var(--panel-2)!important;color:var(--accent)!important}
   .leaflet-bar{box-shadow:var(--shadow)!important;border-radius:6px!important;overflow:hidden;border:1px solid var(--border)!important}
-
-  .map-legend{background:transparent!important;border:none!important;border-radius:10px!important;padding:8px 10px!important;box-shadow:none!important;color:var(--text);font-size:11px;line-height:1.6;min-width:180px;text-shadow:0 0 3px var(--map-bg),0 0 7px var(--map-bg),0 0 10px var(--map-bg)}
+    .map-legend{background:transparent!important;border:none!important;border-radius:10px!important;padding:8px 10px!important;box-shadow:none!important;color:var(--text);font-size:11px;line-height:1.6;min-width:180px;text-shadow:0 0 3px var(--map-bg),0 0 7px var(--map-bg),0 0 10px var(--map-bg)}
   .map-legend .lg-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
   .map-legend .lg-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;color:var(--text-strong);font-weight:600}
   .map-legend .lg-row:last-child{margin-bottom:0}
@@ -345,6 +344,9 @@
   .mp-row .p{font-variant-numeric:tabular-nums;flex-shrink:0}
   .mp-row.best .p{color:var(--green)}
   .mp-row.worst .p{color:var(--red)}
+  .mp-row .ar{font-weight:900;margin-right:4px}
+  .mp-row.best .ar{color:var(--green)}
+  .mp-row.worst .ar{color:var(--red)}
   .mp-sub{font-size:9px;color:var(--muted);font-weight:600;margin-top:3px}
 
   .map-filters{position:absolute;top:62px;right:20px;z-index:1000;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;max-width:calc(100% - 100px)}
@@ -685,7 +687,6 @@
 
   <div id="toasts" aria-live="assertive"></div>
 </div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
 'use strict';
@@ -733,7 +734,6 @@ const DOM = {
   catLegend:$('cat-legend')
 };
 
-const DEMO_DIAS = 365;
 const VISTA = {actual:true, y:0, m:0, dia:1, diasMes:30, fecha:new Date()};
 let diasDelMes = 1;
 function setVista(y, m, d){
@@ -1218,7 +1218,7 @@ function medirFluidezMapa(){
 (window.requestIdleCallback ? (f => requestIdleCallback(f, {timeout:2500})) : (f => setTimeout(f, 600)))(() => {
   iniciarRedVialAnimada().then(medirFluidezMapa, medirFluidezMapa);
 });
-
+  
 const markersLayer = L.layerGroup().addTo(map);
 const stationMarkers = {}; const markerState = {};
 const iconCache = {ok:null,warn:null,crit:null,off:null};
@@ -1249,18 +1249,21 @@ function popupHTML(st){
   const d = datosTurnoActual(st);
   const t = getTurnoActual().turno;
   const pc = cumplimiento(st, mapPeriodo), cc = claseCumpl(pc);
+  const esMes = mapPeriodo === 'mes';
+  const recAcum = esMes ? (st.mesPrevio || 0) + recaudacionDia(st) : recaudacionDia(st);
+  const txAcum  = esMes ? (st.mesPrevioTx || 0) + transaccionesDia(st) : transaccionesDia(st);
   return `
     <strong>${st.nombre}</strong>
     <div style="font-size:10px;color:var(--muted);margin:4px 0 8px;font-weight:600">${st.id} · ${st.ruta} · ${st.sistema}</div>
     <div class="prow"><span>Carriles</span><span>${st.carriles}</span></div>
     <div class="prow"><span>Zona</span><span>${st.zona || '—'}</span></div>
-    <div class="prow"><span>Cumplimiento ${mapPeriodo==='mes'?'mes':'día'}</span><span style="color:${COLOR_CUMPL[cc]}">${pc.toFixed(0)}% · ${LABEL_CUMPL[cc]}</span></div>
+    <div class="prow"><span>Cumplimiento ${esMes?'mes':'día'}</span><span style="color:${COLOR_CUMPL[cc]}">${pc.toFixed(0)}% · ${LABEL_CUMPL[cc]}</span></div>
     <div class="phdr">${t.nombre} · ${t.horario}</div>
     <div class="prow"><span>Rec. turno</span><span style="color:var(--green)">Bs ${fmt(d.recaudacion||0)}</span></div>
     <div class="prow"><span>Transacciones</span><span>${fmt(d.transacciones||0)}</span></div>
-    <div class="phdr">Acumulado día</div>
-    <div class="prow"><span>Recaudación</span><span>Bs ${fmt(recaudacionDia(st))}</span></div>
-    <div class="prow"><span>Transacciones</span><span>${fmt(transaccionesDia(st))}</span></div>
+    <div class="phdr">Acumulado ${esMes ? 'mes' : 'día'}</div>
+    <div class="prow"><span>Recaudación</span><span>Bs ${fmt(recAcum)}</span></div>
+    <div class="prow"><span>Transacciones</span><span>${fmt(txAcum)}</span></div>
   `;
 }
 
@@ -1475,7 +1478,7 @@ document.querySelectorAll('#sys-seg button').forEach(b=>{
 
 let catPeriodo = 'dia';
 let mesPrevioCat = null;
-let mesPrevioTx  = null;   // FIX v3: total exacto de Transacciones de días previos del mes
+let mesPrevioTx  = null;   // total exacto de transacciones de días previos del mes
 const fmtVeh = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
 let _catVer = -1, _catVal = null;
 function vehiculosDiaPorCategoria(){
@@ -1494,19 +1497,8 @@ function vehiculosDiaPorCategoria(){
   return tot;
 }
 function vehiculosMesPorCategoria(dia){
-  // FIX v3: si hay datos reales del API, usarlos tal cual (sin sobrescribir mesPrevioCat)
-  if(Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT){
-    return dia.map((v,i) => v + mesPrevioCat[i]);
-  }
-  // Sin datos reales: estimar SIN cachear en mesPrevioCat (evita contaminar el KPI)
-  const fracDia = fracDiaActual();
-  const totDia = dia.reduce((a,b)=>a+b,0);
-  const diaCompleto = fracDia > 0.05
-    ? totDia / fracDia
-    : estaciones.reduce((a,st)=>a + (st.carriles/4)*4000, 0);
-  const diasPrevios = Math.max(0, diasDelMes - 1);
-  const estimado = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios);
-  return dia.map((v,i) => v + estimado[i]);
+  const prev = (Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) ? mesPrevioCat : new Array(NCAT).fill(0);
+  return dia.map((v,i) => v + prev[i]);
 }
 
 function renderCategorias(){
@@ -1544,11 +1536,7 @@ document.querySelectorAll('#cat-seg button').forEach(b=>{
 
 let turnoPeriodo = 'dia';
 let sysPeriodo = 'dia';
-const TURNO_W = (()=>{
-  const w = [0.30+Math.random()*0.04, 0.37+Math.random()*0.04, 0.28+Math.random()*0.04];
-  const s = w[0]+w[1]+w[2];
-  return w.map(x=>x/s);
-})();
+const TURNO_W = [1/3, 1/3, 1/3];   // el API lo sobrescribe con mesPrevTurno
 
 function renderTurnos(){
   if(mesPrevio === null) initMesEstaciones();
@@ -1602,7 +1590,7 @@ function renderSistemas(){
   }
   DOM.sysList.innerHTML = html;
 }
-
+  
 const kpiState = {dia:0,mes:0,vehiculos:0,alertas:0};
 function animar(elem, from, to, dur, suffix){
   const id = elem._anim = (elem._anim || 0) + 1;
@@ -1635,7 +1623,6 @@ function renderKPIs(){
   animar(DOM.kpiDia, kpiState.dia, recDia, 700, ' <small>Bs</small>'); kpiState.dia = recDia;
   animar(DOM.kpiMes, kpiState.mes, recMes, 900, ' <small>Bs</small>'); kpiState.mes = recMes;
 
-  // FIX v3: prioridad absoluta a mesPrevioTx (exacto, sin redondeos por categoría)
   let vehVal = txDia;
   if (vehPeriodo === 'mes') {
     let totalMes;
@@ -1648,7 +1635,7 @@ function renderKPIs(){
     }
     vehVal = Math.round(totalMes);
   }
-  
+
   animar(DOM.kpiVehiculos, kpiState.vehiculos, vehVal, 700, ''); kpiState.vehiculos = vehVal;
   animar(DOM.kpiAlertas, kpiState.alertas, alertas, 400, ''); kpiState.alertas = alertas;
   pintarMetas(recDia, M);
@@ -1692,8 +1679,8 @@ function renderKPIsExtra(){
   const bS = $('kpi-sobre-b');
   bS.textContent = rezag + ' rezagadas (<90%)';
   bS.className = 'pj ' + (rezag === 0 ? 'ok' : rezag > 5 ? 'crit' : 'warn');
-  $('kpi-mejor').innerHTML = mejor ? '<span class="n">▲ ' + mejor.st.nombre + '</span><span class="p">' + mejor.pct.toFixed(0) + '%</span>' : '<span class="n">▲ —</span>';
-  $('kpi-peor').innerHTML  = peor  ? '<span class="n">▼ ' + peor.st.nombre  + '</span><span class="p">' + peor.pct.toFixed(0)  + '%</span>' : '<span class="n">▼ —</span>';
+  $('kpi-mejor').innerHTML = mejor ? '<span class="n"><span class="ar">▲</span>' + mejor.st.nombre + '</span><span class="p">' + mejor.pct.toFixed(0) + '%</span>' : '<span class="n"><span class="ar">▲</span>—</span>';
+  $('kpi-peor').innerHTML  = peor  ? '<span class="n"><span class="ar">▼</span>' + peor.st.nombre  + '</span><span class="p">' + peor.pct.toFixed(0)  + '%</span>' : '<span class="n"><span class="ar">▼</span>—</span>';
   $('kpi-mp-sub').textContent = '% de cumplimiento · meta ' + (mpPeriodo === 'mes' ? 'mensual' : 'diaria') + ' al corte';
   actualizarIconos();
 }
@@ -1706,18 +1693,6 @@ document.querySelectorAll('#mp-seg button').forEach(b=>{
 });
 
 /* ====== CONTINGENCIAS ====== */
-const PLANTILLAS_ALERTA = [
-  {sev:'crit',ico:'⛔',t:'Carril fuera de línea',m:'Carril 3 sin respuesta'},
-  {sev:'crit',ico:'💸',t:'Recaudación cero',m:'Sin tx en 12 min'},
-  {sev:'warn',ico:'📶',t:'Conectividad intermitente',m:'Pérdida paquetes > 15%'},
-  {sev:'warn',ico:'🎫',t:'Talonario por agotarse',m:'Quedan 12 talonarios Bs 10'},
-  {sev:'warn',ico:'⚖️',t:'Diferencia de arqueo',m:'Descuadre > Bs 200'},
-  {sev:'info',ico:'📈',t:'Ticket promedio inusual',m:'Desvío +18% vs media'},
-  {sev:'info',ico:'🚗',t:'Cola vehicular',m:'Espera > 6 min por carril'},
-  {sev:'crit',ico:'🔁',t:'Transacciones duplicadas',m:'Posible doble cobro'},
-  {sev:'warn',ico:'🔧',t:'Mantenimiento preventivo',m:'Lazo inductivo errático'},
-  {sev:'info',ico:'👤',t:'Cambio de gestor',m:'Relevo en carril 2'}
-];
 const CONT = {dia:{crit:0,warn:0,info:0}, mesPrev:{crit:0,warn:0,info:0}};
 let contPeriodo = 'dia';
 function contingenciasPeriodo(){
@@ -1816,10 +1791,6 @@ document.addEventListener('visibilitychange', async ()=>{
    (las metas se editan en la hoja Config de la planilla)
    ========================================================== */
 const METAS = {dia:3000000, mes:90000000};
-try{
-  const m = JSON.parse(localStorage.getItem('nexus-metas')||'null');
-  if(m && m.dia>0 && m.mes>0){ METAS.dia = m.dia; METAS.mes = m.mes; }
-}catch(e){}
 let mesPrevio = null;
 
 const fmtCompacto = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
@@ -1851,7 +1822,6 @@ function initMesEstaciones(){
    RECAUDACIÓN · DÍA DE LA SEMANA
    ========================================================== */
 const DIAS_SEM   = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-const FACTOR_DOW = [0.94,0.92,0.96,1.00,1.13,1.10,1.04];
 const dowLun = d => (d.getDay()+6)%7;
 let histDias = null, diasPeriodo = 'semana';
 
@@ -1860,25 +1830,9 @@ function totalHoy(){
   for(let i=0;i<estaciones.length;i++) t += recaudacionDia(estaciones[i]);
   return t;
 }
-function initHistDias(){
-  if(mesPrevio === null) initMesEstaciones();
-  const hoy = new Date(VISTA.fecha); hoy.setHours(0,0,0,0);
-  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - dowLun(hoy));
-  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const desde = lunes < inicioMes ? lunes : inicioMes;
-  const dias = [];
-  for(let d = new Date(desde); d < hoy; d.setDate(d.getDate()+1)){
-    const f = new Date(d), w = dowLun(f);
-    dias.push({t:f.getTime(), dow:w, enMes:f >= inicioMes, w:FACTOR_DOW[w]*(0.93+Math.random()*0.14)});
-  }
-  const sw = dias.filter(x=>x.enMes).reduce((a,x)=>a+x.w, 0);
-  const escala = sw > 0 ? mesPrevio / sw : METAS.dia * 0.97;
-  dias.forEach(x => x.rec = escala * x.w);
-  histDias = {dias, hoy:hoy.getTime(), lunes:lunes.getTime(), dowHoy:dowLun(hoy)};
-}
 
 function renderDias(){
-  if(!histDias) initHistDias();
+  if(!histDias) return;
   const H = histDias, hoyRec = totalHoy();
   const esMes = diasPeriodo === 'mes';
   const fracEsp = Math.max(0.02, fracDiaActual());
@@ -2127,7 +2081,7 @@ document.addEventListener('mousemove', ()=>{
   if(document.fullscreenElement) idleTimer = setTimeout(()=>cl.add('idle'), 4000);
 }, {passive:true});
 actualizarBotonAlertas();
-
+  
 /* ====== DATOS DESDE LA PLANILLA ====== */
 let alertasVistas = null;
 function avisoApi(msg){
@@ -2146,7 +2100,7 @@ const ymStr = (y, m) => y + '-' + String(m+1).padStart(2,'0');
 const ymd = f => f.getFullYear() + '-' + String(f.getMonth()+1).padStart(2,'0') + '-' + String(f.getDate()).padStart(2,'0');
 const urlApi = q => API_URL + (API_URL.includes('?') ? '&' : '?') + q + (API_TOKEN ? '&token=' + encodeURIComponent(API_TOKEN) : '');
 
-const CACHE_VER = 'nexus-v3:';
+const CACHE_VER = 'nexus-v4:';
 const TTL_HOY = Math.max(5000, API_REFRESH_MS - 2000);
 const TTL_HIST = 24 * 3600e3;
 const TTL_INDICE = 3600e3;
@@ -2226,81 +2180,6 @@ async function cargarIndice(){
   }catch(e){ if(c) agregarFechas(c.f); }
 }
 
-const ACUM = {key:null, cat:null, cont:null, cargando:null};
-const contVacio = c => !c || (!(Number(c.crit) > 0) && !(Number(c.warn) > 0) && !(Number(c.info) > 0));
-
-function resumenDia(d){
-  const cat = new Array(NCAT).fill(0);
-  let txTotal = 0;                                       // FIX v3
-  Object.keys(d.estaciones || {}).forEach(id => {
-    const x = d.estaciones[id];
-    if(!x || !Array.isArray(x.turnos)) return;
-    x.turnos.forEach(t => {
-      const tx = Number(t && t.tx) || 0;
-      if(!tx) return;
-      txTotal += tx;                                      // FIX v3
-      const cats = (t.cats && t.cats.length === NCAT && t.cats.some(v => Number(v) > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
-      const suma = cats.reduce((a,b) => a + (Number(b) || 0), 0) || 1;
-      for(let i=0;i<NCAT;i++) cat[i] += tx * ((Number(cats[i]) || 0) / suma);
-    });
-  });
-  const c = (d.cont && d.cont.dia) || {};
-  return {cat, tx: txTotal, cont:{crit:Number(c.crit) || 0, warn:Number(c.warn) || 0, info:Number(c.info) || 0}};
-}
-
-async function calcularAcumMes(key){
-  ACUM.cargando = key;
-  const y = VISTA.y, m = VISTA.m, hasta = VISTA.dia, pref = ymStr(y, m) + '-';
-  let dias = [...FECHAS].filter(s => s.startsWith(pref) && +s.slice(8,10) < hasta);
-  if(!dias.length){
-    for(let i=1;i<hasta;i++) dias.push(pref + String(i).padStart(2,'0'));
-  }
-  dias.sort();
-  const cat = new Array(NCAT).fill(0), cont = {crit:0, warn:0, info:0};
-  let txMes = 0;                                            // FIX v3
-  try{
-    for(let i=0;i<dias.length;i+=4){
-      const lote = dias.slice(i, i+4);
-      const res = await Promise.all(lote.map(s => {
-        const p = s.split('-').map(Number);
-        return obtenerDatos(new Date(p[0], p[1]-1, p[2])).catch(() => null);
-      }));
-      if(key !== ymd(VISTA.fecha)) return;
-      res.forEach(dd => {
-        if(!dd) return;
-        const r = resumenDia(dd);
-        for(let k=0;k<NCAT;k++) cat[k] += r.cat[k];
-        txMes += r.tx;                                      // FIX v3
-        cont.crit += r.cont.crit; cont.warn += r.cont.warn; cont.info += r.cont.info;
-      });
-    }
-  } finally {
-    if(ACUM.cargando === key) ACUM.cargando = null;
-  }
-  if(key !== ymd(VISTA.fecha)) return;
-  ACUM.key = key; ACUM.cat = cat; ACUM.tx = txMes; ACUM.cont = cont;   // FIX v3
-  mesPrevioCat = cat.slice();
-  mesPrevioTx  = txMes;                                     // FIX v3
-  CONT.mesPrev = Object.assign({}, cont);
-}
-
-function aplicarAcumMes(d){
-  if(Number(d.v) >= 2) return;
-  const key = ymd(VISTA.fecha);
-  const apiCatOk  = Array.isArray(mesPrevioCat);
-  const apiContOk = !contVacio(d.cont && d.cont.mesPrev);
-  const necesita = VISTA.dia > 1 && (!VISTA.actual || !apiCatOk || !apiContOk);
-  if(!necesita) return;
-  if(ACUM.key === key && ACUM.cat){
-    mesPrevioCat = ACUM.cat.slice();
-    mesPrevioTx  = ACUM.tx;                                 // FIX v3
-    CONT.mesPrev = Object.assign({}, ACUM.cont);
-    return;
-  }
-  if(ACUM.cargando === key) return;
-  calcularAcumMes(key);
-}
-
 function aplicarDatos(d){
   if(Array.isArray(d.fechas)) agregarFechas(d.fechas);
   if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
@@ -2323,6 +2202,7 @@ function aplicarDatos(d){
       share:    Number(x.share) || 0,
       ayerBase: Number(x.ayer) || 0,
       mesPrevio: Number(x.mesPrev) || 0,
+      mesPrevioTx: Number(x.mesPrevTx) || 0,
       turnos: (x.turnos && x.turnos.length ? x.turnos : [0,0,0]).map(t => {
         const tx = t.tx || 0, rec = t.rec || 0;
         const cats = (t.cats && t.cats.some(v => v > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
@@ -2386,7 +2266,6 @@ function aplicarDatos(d){
   mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && (d.mesPrevCat.some(v => Number(v) > 0) || Number(d.v) >= 2)
     ? d.mesPrevCat.map(v => Number(v) || 0)
     : null;
-  // FIX v3: leer el total exacto de Transacciones del mes que envía el API
   mesPrevioTx = (typeof d.mesPrevTx === 'number' && d.mesPrevTx >= 0)
               ? Number(d.mesPrevTx)
               : null;
@@ -2411,8 +2290,6 @@ function aplicarDatos(d){
   });
   CONT.dia     = _normSev(d.cont && d.cont.dia);
   CONT.mesPrev = _normSev(d.cont && d.cont.mesPrev);
-
-  aplicarAcumMes(d);
 
   const lista = (d.alertas || []).map(a=>{
     a = Object.assign({}, a, {sev: /^(info|regular|informativa)$/i.test(a.sev) ? 'info' : /^(crit|critica|crítica)$/i.test(a.sev) ? 'crit' : /^(warn|advertencia)$/i.test(a.sev) ? 'warn' : a.sev});
