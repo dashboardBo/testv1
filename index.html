@@ -1191,49 +1191,118 @@ async function redVialDesdeSVG(){
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   const root = doc.documentElement;
   if(!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return false;
-  
-  const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
-  const clone = root.cloneNode(true);
 
-  // Inyectar estilos CSS directamente en el SVG (evita conflictos con Leaflet)
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-99999px;top:0;width:10px;height:10px;overflow:hidden;visibility:hidden;pointer-events:none';
+  const live = document.importNode(root, true);
+  host.appendChild(live);
+  document.body.appendChild(host);
+
+  let clone = null, vial = null, limite = null;
+
+  try{
+    const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
+    const abiertos = new Map(), cerrados = new Map(), info = [];
+    
+    // Analizar los elementos para distinguir carreteras de límites
+    live.querySelectorAll('path,polyline,line,polygon').forEach(el=>{
+      if(el.closest(SKIP)) return;
+      const cs = getComputedStyle(el);
+      if(!cs.stroke || cs.stroke === 'none' || cs.display === 'none') return;
+      if(parseFloat(cs.strokeOpacity) < 0.2) return;
+      const rgb = parseColorCSS(cs.stroke);
+      if(!rgb) return;
+      const tag = el.tagName.toLowerCase();
+      const cerrado = tag === 'polygon' || (tag === 'path' && /[zZ]/.test(el.getAttribute('d') || ''));
+      const k = rgb.join(',');
+      const mapa = cerrado ? cerrados : abiertos;
+      const o = mapa.get(k);
+      if(o) o.n++; else mapa.set(k, {rgb, n:1});
+      info.push({el, rgb, cerrado});
+    });
+
+    const top = m => [...m.values()].sort((a,b)=>b.n-a.n);
+    const ab = top(abiertos), ce = top(cerrados);
+    if(!ab.length) return false;
+    
+    // Identificar el color principal de las carreteras (vial) y del límite (limite)
+    vial = ab[0].rgb;
+    limite = ce.length ? ce[0].rgb : ((ab.find(o => rgbDist(o.rgb, vial) > 60) || ab[0]).rgb);
+
+    // FILTRO CLAVE: Solo seleccionar caminos abiertos que coincidan con el color de las carreteras
+    const carreteras = info.filter(o => !o.cerrado && rgbDist(o.rgb, vial) < 60);
+    if(!carreteras.length) return false;
+
+    // Marcar SOLO esos caminos para animarlos
+    carreteras.forEach(o => {
+      o.el.setAttribute('data-nx-road', '1');
+    });
+
+    // Calcular dirección del flujo (desde el centro hacia afuera)
+    const num = v => /^[\d.]+(px)?$/.test((v||'').trim()) ? parseFloat(v) : 0;
+    let vb = live.viewBox && live.viewBox.baseVal;
+    if(!vb || !(vb.width > 0)){
+      vb = {x:0, y:0, width:num(live.getAttribute('width')) || 1000, height:num(live.getAttribute('height')) || 1000};
+    }
+    const cx = vb.x + (CENTRO_RED.lon - DEPT_BOUNDS.getWest())  / (DEPT_BOUNDS.getEast()  - DEPT_BOUNDS.getWest())  * vb.width;
+    const cy = vb.y + (DEPT_BOUNDS.getNorth() - CENTRO_RED.lat) / (DEPT_BOUNDS.getNorth() - DEPT_BOUNDS.getSouth()) * vb.height;
+    const rootInv = live.getScreenCTM() ? live.getScreenCTM().inverse() : null;
+    const aRaiz = (el, x, y) => {
+      const m = rootInv && el.getScreenCTM() ? rootInv.multiply(el.getScreenCTM()) : null;
+      return m ? new DOMPoint(x, y).matrixTransform(m) : {x, y};
+    };
+    function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
+
+    carreteras.forEach(o => {
+      try{
+        const L0 = o.el.getTotalLength(), el = o.el;
+        const a = aRaiz(el, ...Object.values(pt(el, 0))), b = aRaiz(el, ...Object.values(pt(el, L0)));
+        
+        // Si el punto final está más cerca del centro que el inicial, invertir la animación
+        if(Math.hypot(b.x-cx, b.y-cy) < Math.hypot(a.x-cx, a.y-cy)) {
+          o.el.setAttribute('data-nx-rev', '1');
+        }
+      }catch(e){}
+    });
+
+    clone = live.cloneNode(true);
+  } finally {
+    host.remove();
+  }
+
+  clone.querySelectorAll('style,script,foreignObject,title,desc,metadata').forEach(n=>n.remove());
+
+  // Inyectar el CSS con las medidas corregidas (más finitas y espaciadas)
   const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
   styleEl.textContent = `
     .nx-flow-road {
       fill: none !important;
-      stroke-width: 3px !important;
-      stroke-dasharray: 10 15 !important;
+      stroke: #ffcc00 !important;
+      stroke-width: 1.5px !important; /* MÁS FINO */
+      stroke-dasharray: 4 16 !important; /* MÁS LARGO Y ESPACIADO */
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       vector-effect: non-scaling-stroke !important;
       animation: moverFlujo 1s linear infinite !important;
     }
-    .nx-flow-road.nx-rev { animation-direction: reverse !important; }
+    .nx-flow-road.nx-rev {
+      animation-direction: reverse !important;
+    }
     @keyframes moverFlujo {
       from { stroke-dashoffset: 0; }
-      to { stroke-dashoffset: -25; }
+      to { stroke-dashoffset: -20; } /* Suma exacta de 4 + 16 */
     }
   `;
   clone.appendChild(styleEl);
 
-  // Aplicar la clase a todos los paths que parezcan carreteras (sin relleno)
-  let count = 0;
+  // Aplicar las clases de animación solo a los elementos marcados
   clone.querySelectorAll('path,polyline,line').forEach(el=>{
-    if(el.closest(SKIP)) return;
-    const fill = el.getAttribute('fill');
-    if (fill && fill !== 'none' && fill !== 'transparent') return;
-
-    const tag = el.tagName.toLowerCase();
-    const d = el.getAttribute('d') || '';
-    const isClosed = tag === 'path' && /[zZ]/.test(d);
-
-    if (!isClosed) {
-      const cls = el.getAttribute('class') || '';
-      el.setAttribute('class', cls + ' nx-flow-road');
-      count++;
+    if(el.getAttribute('data-nx-road') === '1'){
+      const rev = el.getAttribute('data-nx-rev') === '1';
+      ['style','stroke-width','stroke-dasharray','stroke-opacity','class','filter','data-nx-road','data-nx-rev'].forEach(a=>el.removeAttribute(a));
+      el.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
     }
   });
-
-  if (count === 0) return false;
 
   if(!clone.getAttribute('viewBox')){
     const w = parseFloat(clone.getAttribute('width')) || 1000;
@@ -1244,6 +1313,12 @@ async function redVialDesdeSVG(){
   clone.removeAttribute('height'); 
   clone.removeAttribute('style');
   clone.setAttribute('class','nx-flow-svg');
+
+  // Opcional: aplicar colores de la leyenda si no se ha hecho
+  if(!LEYENDA_MANUAL){
+    LEG_COLORES = {limite, vial}; LEG_VECTOR = true;
+    aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'), mapProcesadoActivo);
+  }
 
   L.svgOverlay(clone, DEPT_BOUNDS, {pane:'flow', interactive:false}).addTo(map);
   return true;
