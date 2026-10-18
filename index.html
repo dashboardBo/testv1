@@ -693,7 +693,7 @@
 const $ = id => document.getElementById(id);
 
 /* ====== CONEXIÓN CON GOOGLE SHEETS (Apps Script) ====== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwpM5k-6fSofZDn3m_fJ9_otcHztzqO7G5YKfiN2vfK021m9DlPwVL62YC67Wjgkuwe1A/exec';
 const API_TOKEN = '';
 const API_REFRESH_MS = 90000; // base; se alarga solo (hasta x3) si los datos no cambian
 const MODO_API = !!API_URL;
@@ -1475,8 +1475,8 @@ document.querySelectorAll('#sys-seg button').forEach(b=>{
 
 let catPeriodo = 'dia';
 let mesPrevioCat = null;
+let mesPrevioTx  = null;   // FIX v3: total exacto de Transacciones de días previos del mes
 const fmtVeh = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
-
 let _catVer = -1, _catVal = null;
 function vehiculosDiaPorCategoria(){
   if(_catVer === dataVer && _catVal) return _catVal;
@@ -1494,16 +1494,19 @@ function vehiculosDiaPorCategoria(){
   return tot;
 }
 function vehiculosMesPorCategoria(dia){
-  if(mesPrevioCat === null){
-    const fracDia = fracDiaActual();
-    const totDia = dia.reduce((a,b)=>a+b,0);
-    const diaCompleto = fracDia > 0.05
-      ? totDia / fracDia
-      : estaciones.reduce((a,st)=>a + (st.carriles/4)*4000, 0);
-    const diasPrevios = Math.max(0, diasDelMes - 1);
-    mesPrevioCat = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios);
+  // FIX v3: si hay datos reales del API, usarlos tal cual (sin sobrescribir mesPrevioCat)
+  if(Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT){
+    return dia.map((v,i) => v + mesPrevioCat[i]);
   }
-  return dia.map((v,i) => v + mesPrevioCat[i]);
+  // Sin datos reales: estimar SIN cachear en mesPrevioCat (evita contaminar el KPI)
+  const fracDia = fracDiaActual();
+  const totDia = dia.reduce((a,b)=>a+b,0);
+  const diaCompleto = fracDia > 0.05
+    ? totDia / fracDia
+    : estaciones.reduce((a,st)=>a + (st.carriles/4)*4000, 0);
+  const diasPrevios = Math.max(0, diasDelMes - 1);
+  const estimado = CATEGORIAS.map(c => diaCompleto * c.peso * diasPrevios);
+  return dia.map((v,i) => v + estimado[i]);
 }
 
 function renderCategorias(){
@@ -1632,12 +1635,14 @@ function renderKPIs(){
   animar(DOM.kpiDia, kpiState.dia, recDia, 700, ' <small>Bs</small>'); kpiState.dia = recDia;
   animar(DOM.kpiMes, kpiState.mes, recMes, 900, ' <small>Bs</small>'); kpiState.mes = recMes;
 
-  // FIX APLICADO: Cálculo exacto de vehículos en modo Mes (evita descuadre por redondeo de categorías)
+  // FIX v3: prioridad absoluta a mesPrevioTx (exacto, sin redondeos por categoría)
   let vehVal = txDia;
   if (vehPeriodo === 'mes') {
-    let totalMes = txDia;
-    if (Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) {
-      totalMes += mesPrevioCat.reduce((a,b)=>a+b, 0);
+    let totalMes;
+    if (typeof mesPrevioTx === 'number' && mesPrevioTx >= 0) {
+      totalMes = txDia + mesPrevioTx;
+    } else if (Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) {
+      totalMes = txDia + mesPrevioCat.reduce((a,b)=>a+b, 0);
     } else {
       totalMes = vehiculosMesPorCategoria(vehiculosDiaPorCategoria()).reduce((a,b)=>a+b, 0);
     }
@@ -2226,19 +2231,21 @@ const contVacio = c => !c || (!(Number(c.crit) > 0) && !(Number(c.warn) > 0) && 
 
 function resumenDia(d){
   const cat = new Array(NCAT).fill(0);
+  let txTotal = 0;                                       // FIX v3
   Object.keys(d.estaciones || {}).forEach(id => {
     const x = d.estaciones[id];
     if(!x || !Array.isArray(x.turnos)) return;
     x.turnos.forEach(t => {
       const tx = Number(t && t.tx) || 0;
       if(!tx) return;
+      txTotal += tx;                                      // FIX v3
       const cats = (t.cats && t.cats.length === NCAT && t.cats.some(v => Number(v) > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
       const suma = cats.reduce((a,b) => a + (Number(b) || 0), 0) || 1;
       for(let i=0;i<NCAT;i++) cat[i] += tx * ((Number(cats[i]) || 0) / suma);
     });
   });
   const c = (d.cont && d.cont.dia) || {};
-  return {cat, cont:{crit:Number(c.crit) || 0, warn:Number(c.warn) || 0, info:Number(c.info) || 0}};
+  return {cat, tx: txTotal, cont:{crit:Number(c.crit) || 0, warn:Number(c.warn) || 0, info:Number(c.info) || 0}};
 }
 
 async function calcularAcumMes(key){
@@ -2250,6 +2257,7 @@ async function calcularAcumMes(key){
   }
   dias.sort();
   const cat = new Array(NCAT).fill(0), cont = {crit:0, warn:0, info:0};
+  let txMes = 0;                                            // FIX v3
   try{
     for(let i=0;i<dias.length;i+=4){
       const lote = dias.slice(i, i+4);
@@ -2262,6 +2270,7 @@ async function calcularAcumMes(key){
         if(!dd) return;
         const r = resumenDia(dd);
         for(let k=0;k<NCAT;k++) cat[k] += r.cat[k];
+        txMes += r.tx;                                      // FIX v3
         cont.crit += r.cont.crit; cont.warn += r.cont.warn; cont.info += r.cont.info;
       });
     }
@@ -2269,10 +2278,10 @@ async function calcularAcumMes(key){
     if(ACUM.cargando === key) ACUM.cargando = null;
   }
   if(key !== ymd(VISTA.fecha)) return;
-  ACUM.key = key; ACUM.cat = cat; ACUM.cont = cont;
+  ACUM.key = key; ACUM.cat = cat; ACUM.tx = txMes; ACUM.cont = cont;   // FIX v3
   mesPrevioCat = cat.slice();
+  mesPrevioTx  = txMes;                                     // FIX v3
   CONT.mesPrev = Object.assign({}, cont);
-  renderKPIs(); renderCategorias();
 }
 
 function aplicarAcumMes(d){
@@ -2284,6 +2293,7 @@ function aplicarAcumMes(d){
   if(!necesita) return;
   if(ACUM.key === key && ACUM.cat){
     mesPrevioCat = ACUM.cat.slice();
+    mesPrevioTx  = ACUM.tx;                                 // FIX v3
     CONT.mesPrev = Object.assign({}, ACUM.cont);
     return;
   }
@@ -2376,6 +2386,10 @@ function aplicarDatos(d){
   mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && (d.mesPrevCat.some(v => Number(v) > 0) || Number(d.v) >= 2)
     ? d.mesPrevCat.map(v => Number(v) || 0)
     : null;
+  // FIX v3: leer el total exacto de Transacciones del mes que envía el API
+  mesPrevioTx = (typeof d.mesPrevTx === 'number' && d.mesPrevTx >= 0)
+              ? Number(d.mesPrevTx)
+              : null;
   if(Array.isArray(d.mesPrevTurno) && d.mesPrevTurno.length === 3){
     const ts = d.mesPrevTurno.reduce((a,b)=>a+b, 0);
     if(ts > 0) d.mesPrevTurno.forEach((v,i)=>{ TURNO_W[i] = v/ts; });
@@ -2447,7 +2461,7 @@ async function cambiarFecha(y, m, d){
     detenerVoz();
     setVista(y, m, d);
     alertasVistas = null;
-    mesPrevio = null; mesPrevioCat = null; histDias = null;
+    mesPrevio = null; mesPrevioCat = null; mesPrevioTx = null; histDias = null;
     API_EST.prox = 0; API_EST.idle = 0; API_EST.firma = null;
     try{ await cargarDatos(); avisoApi(''); }
     catch(e){ console.error('[API]', e); aplicarDatos(DATOS_VACIOS()); avisoApi('⚠ No se pudo leer la planilla para esta fecha'); }
