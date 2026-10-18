@@ -32,7 +32,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --map-bg: #eaedf3; --shadow: 0 4px 14px rgba(30,40,30,.10);
     --glass: rgba(255,255,255,.93);
-    --boundary-color: #155e75;
+    --boundary-color: #075985;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;width:100%;overflow:hidden;margin:0}
@@ -162,8 +162,8 @@
   .map-legend .lg-line{width:24px;height:3px;border-radius:2px;flex-shrink:0}
   .map-legend .lg-line.glow{
     height:3px;
-    background:#38bdf8!important;
-    box-shadow:0 0 5px 2px rgba(56,189,248,.95)!important;
+    background:#075985!important;
+    box-shadow:none!important;
     filter:none!important;
   }
   .map-legend .lg-line.road{
@@ -173,6 +173,8 @@
     filter:none!important;
   }
   [data-theme="light"] .map-legend.fb .lg-line{filter:none!important}
+  [data-theme="light"] .map-legend .lg-line.glow{background:#075985!important;box-shadow:none!important;}
+  [data-theme="light"] .map-legend .lg-line.road{background:#c2410c!important;box-shadow:none!important;}
   .map-legend .lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;white-space:nowrap}
   .map-legend .lg-group.lg-estado{flex-wrap:nowrap}
   .map-legend .lg-row{white-space:nowrap}
@@ -1354,9 +1356,9 @@ async function redVialDesdeSVG(){
     .nx-flow-road{
       fill:none !important;
       stroke:#ffcc00 !important;
-      stroke-width:2px !important;
-      stroke-opacity:.9 !important;
-      stroke-dasharray:6 22 !important;
+      stroke-width:3.2px !important;
+      stroke-opacity:1 !important;
+      stroke-dasharray:11 17 !important;
       stroke-linecap:round !important;
       stroke-linejoin:round !important;
       vector-effect:non-scaling-stroke !important;
@@ -1365,14 +1367,14 @@ async function redVialDesdeSVG(){
     .nx-base-road{
       fill:none !important;
       stroke:#ffcc00 !important;
-      stroke-width:.9px !important;
-      stroke-opacity:.55 !important;
+      stroke-width:1.25px !important;
+      stroke-opacity:.8 !important;
       stroke-linecap:round !important;
       stroke-linejoin:round !important;
       vector-effect:non-scaling-stroke !important;
     }
     [data-theme="light"] .nx-flow-road,
-    [data-theme="light"] .nx-base-road{ stroke:#b45309 !important; }
+    [data-theme="light"] .nx-base-road{ stroke:#c2410c !important; }
     .nx-flow-road.nx-rev{ animation-direction:reverse !important; }
     .nx-pausa .nx-flow-road{ animation-play-state:paused !important; }
     .nx-lite .nx-flow-road{ animation:none !important; stroke-dasharray:none !important; stroke-opacity:.5 !important; }
@@ -1386,7 +1388,7 @@ async function redVialDesdeSVG(){
       fill-opacity: 1 !important;
       fill-rule: nonzero !important;
       stroke: #155e75 !important;
-      stroke-width: 4px !important;
+      stroke-width: 5px !important;
       stroke-opacity: 1 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
