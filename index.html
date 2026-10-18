@@ -75,7 +75,6 @@
   .kpi.k-red::before{background:var(--flag-red)}
   .kpi.k-amber::before{background:var(--flag-yellow)}
   .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
-  /* Los KPI con botones Día/Mes: el nombre arriba y los botones en la línea de abajo (sin solaparse) */
   .kpi .label.lb-col{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
   .kpi .label.lb-col > span:first-child{flex:1;min-width:0}
   .kpi .label.lb-col .seg{flex-shrink:0}
@@ -331,7 +330,6 @@
   .meta-bar i.warn{background:var(--yellow)}
   .meta-bar i.crit{background:var(--red)}
   .meta-bar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text-strong);opacity:.85;border-radius:1px;transition:left .8s ease}
-  /* Salto de línea: el texto de abajo (p. ej. "Proy. cierre Bs …") ya no se oculta, va en su propia línea */
   .meta-line{display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:10px;font-weight:600;color:var(--muted);margin-top:6px;white-space:normal}
   .meta-line > span{max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
   .meta-line .pj{font-weight:800}
@@ -694,8 +692,7 @@
 
 const $ = id => document.getElementById(id);
 
-/* ====== CONEXIÓN CON GOOGLE SHEETS (Apps Script) ======
-   PEGA AQUÍ la URL /exec de tu Web App. */
+/* ====== CONEXIÓN CON GOOGLE SHEETS (Apps Script) ====== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbyEmpV8r0LczkhgV6nz25mL2ZtXLc0uQ4vWAyqA6Cywhfim536rDYmbcE_orpz_NlNTEA/exec';
 const API_TOKEN = '';
 const API_REFRESH_MS = 90000; // base; se alarga solo (hasta x3) si los datos no cambian
@@ -860,12 +857,10 @@ centerControl.onAdd = function() {
 centerControl.addTo(map);
 
 const MAP_SRC = 'santacruz.svg';
-/* El SVG se descarga como texto UNA sola vez y se reutiliza */
 let _mapSvgTexto = null;
 const mapSvgTexto = () => _mapSvgTexto || (_mapSvgTexto = fetch(MAP_SRC).then(r => { if(!r.ok) throw new Error('svg'); return r.text(); }));
 let mapOverlay = null, mapSrcPixels = null, mapSrcW = 0, mapSrcH = 0;
 let mapSrcTransparent = false, canvasOK = false;
-let mapProcURL = null;
 
 const toHex = (r,g,b) => '#' + [r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
 function setSvgBg(color){
@@ -1010,25 +1005,6 @@ function aplicarColoresLeyenda(theme, procesado){
   st.setProperty('--lg-vial-hi', toHex(hi[0], hi[1], hi[2]));
 }
 
-function procesarMapa(){
-  const src = mapSrcPixels.data;
-  const out = new ImageData(mapSrcW, mapSrcH);
-  const o = out.data;
-  for(let i=0;i<src.length;i+=4){
-    const r=src[i], g=src[i+1], b=src[i+2];
-    const lum = Math.max(r,g,b)/255;
-    if(lum < 0.07){ o[i+3]=0; continue; }
-    o[i]   = Math.min(255,(r/lum)*0.55);
-    o[i+1] = Math.min(255,(g/lum)*0.55);
-    o[i+2] = Math.min(255,(b/lum)*0.55);
-    o[i+3] = Math.min(255, lum*255*1.35);
-  }
-  const c = document.createElement('canvas');
-  c.width = mapSrcW; c.height = mapSrcH;
-  c.getContext('2d').putImageData(out,0,0);
-  return c.toDataURL('image/png');
-}
-
 function applyMapTheme(theme){
   theme = theme || document.documentElement.getAttribute('data-theme') || 'dark';
   if(mapOverlay){
@@ -1060,7 +1036,6 @@ function applyMapTheme(theme){
   img.crossOrigin = 'anonymous';
   img.onload = function(){
     try{
-      /* Análisis en un canvas reducido (~480 px): evita leer ~16 MB de píxeles */
       const nW0 = img.naturalWidth  || img.width  || 2200;
       const nH0 = img.naturalHeight || img.height || 1867;
       const esc = Math.min(1, 480 / nW0);
@@ -1240,7 +1215,6 @@ function medirFluidezMapa(){
     requestAnimationFrame(paso);
   }, 2500);
 }
-/* La red vial animada se inicia en tiempo ocioso para no competir con el primer pintado */
 (window.requestIdleCallback ? (f => requestIdleCallback(f, {timeout:2500})) : (f => setTimeout(f, 600)))(() => {
   iniciarRedVialAnimada().then(medirFluidezMapa, medirFluidezMapa);
 });
@@ -2185,7 +2159,7 @@ function lruTocar(k){
 
 async function obtenerDatos(f, forzar){
   const k = ymd(f), esHoy = (k === ymd(new Date()));
-  const ttl = esHoy ? TTL_HOY : 60000;   /* días pasados: se revalidan cada 60 s (antes 24 h) */
+  const ttl = esHoy ? TTL_HOY : TTL_HIST; /* días pasados: se guardan en caché 24 horas */
   const e = memCache.get(k) || lsGet('d:' + k);
   if(e && !forzar && Date.now() - e.t < ttl){ memCache.set(k, e); return e.d; }
   if(enVuelo.has(k)) return enVuelo.get(k);
