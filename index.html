@@ -56,6 +56,19 @@
   :root[data-theme="dark"] .badge-mes select{color-scheme:dark}
   :root[data-theme="light"] .badge-mes select{color-scheme:light}
 
+
+  .badge-mes{gap:6px;padding:6px 9px;border-radius:10px;letter-spacing:0;text-transform:none;max-width:min(46vw,620px)}
+  #mes-label{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap}
+  .badge-mes select{border-radius:7px;padding:5px 7px;font-size:10px;letter-spacing:0;min-width:0}
+  #sel-dia{width:58px} #sel-mes{width:100px} #sel-anio{width:72px}
+  #cat-sort-seg button{padding:4px 7px;font-size:9px}
+  #sobre-seg button{padding:3px 6px;font-size:8px}
+  @media(max-width:1250px){
+    .badge-mes{gap:4px;padding:5px 6px;max-width:44vw}
+    #mes-label{max-width:74px;overflow:hidden;text-overflow:ellipsis}
+    .badge-mes select{padding:4px 5px}
+  }
+
   @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(213,43,30,.6)}50%{opacity:.55;box-shadow:0 0 0 6px rgba(213,43,30,0)}}
 
   .clock{text-align:right;border-right:1px solid var(--border);padding-right:20px}
@@ -450,7 +463,7 @@
     </div>
 
     <div class="badge-mes" id="badge-mes" title="Seleccione día, mes y año (solo fechas con datos): todo el tablero se actualiza">
-      <span id="mes-label">Información del mes en curso ·</span>
+      <span id="mes-label">Periodo</span>
       <select id="sel-dia" aria-label="Día"></select>
       <select id="sel-mes" aria-label="Mes"></select>
       <select id="sel-anio" aria-label="Año"></select>
@@ -489,8 +502,14 @@
       <div class="sub" id="kpi-var-sub">—</div>
     </div>
     <div class="kpi" id="kpi-sobre-box">
-      <div class="label"><span title="Estaciones que van al ritmo de su meta diaria o por encima">Estaciones en meta</span></div>
-      <div class="value" id="kpi-sobre">0 <small>de 42</small></div>
+      <div class="label lb-col">
+        <span title="Estaciones que cumplen el ritmo esperado de su meta">Estaciones en meta</span>
+        <div class="seg" id="sobre-seg" title="Cambiar cálculo entre meta diaria y mensual">
+          <button data-p="dia" class="active">Día</button>
+          <button data-p="mes">Mes</button>
+        </div>
+      </div>
+      <div class="value" id="kpi-sobre">0 <small>de 0</small></div>
       <div class="meta-bar"><i id="kpi-sobre-bar"></i></div>
       <div class="meta-line"><span id="kpi-sobre-a">—</span><span id="kpi-sobre-b" class="pj">—</span></div>
     </div>
@@ -654,9 +673,15 @@
       <div class="panel">
         <div class="panel-head">
           <span>Vehículos por categoría</span>
-          <div class="seg" id="cat-seg">
-            <button data-p="dia" class="active">Día</button>
-            <button data-p="mes">Mes</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <div class="seg" id="cat-seg">
+              <button data-p="dia" class="active">Día</button>
+              <button data-p="mes">Mes</button>
+            </div>
+            <div class="seg" id="cat-sort-seg" title="Ordenar categorías por cantidad">
+              <button data-sort="desc" class="active" aria-label="Mayor a menor">↓ Mayor</button>
+              <button data-sort="asc" aria-label="Menor a mayor">↑ Menor</button>
+            </div>
           </div>
         </div>
         <div class="cat-wrap">
@@ -770,18 +795,10 @@ function progresoTurno(){
 const SISTEMAS = ['Kineo','Siscap','Televias','Sisapp'];
 const COLOR_SISTEMA = {Kineo:'var(--red)',Siscap:'var(--yellow)',Televias:'var(--green)',Sisapp:'#e8833a'};
 
-const CATEGORIAS = [
-  {id:'C1',nombre:'Motos',        color:'#4cc9f0',        peso:0.10},
-  {id:'C2',nombre:'Autos',        color:'var(--green)',   peso:0.38},
-  {id:'C3',nombre:'Camionetas',   color:'#a3e635',        peso:0.15},
-  {id:'C4',nombre:'Minibuses',    color:'#2dd4bf',        peso:0.06},
-  {id:'C5',nombre:'Buses',        color:'#a78bfa',        peso:0.05},
-  {id:'C6',nombre:'Camión 2 ejes',color:'var(--yellow)',  peso:0.11},
-  {id:'C7',nombre:'Camión 3 ejes',color:'#e8833a',        peso:0.07},
-  {id:'C8',nombre:'Camión 4 ejes',color:'var(--red)',     peso:0.05},
-  {id:'C9',nombre:'Camión 5+ ejes',color:'#a3201a',       peso:0.03}
-];
-const NCAT = CATEGORIAS.length;
+const PALETA_CATEGORIAS = ['#4cc9f0','var(--green)','#a3e635','#2dd4bf','#a78bfa','var(--yellow)','#e8833a','var(--red)','#a3201a','#60a5fa','#f472b6','#34d399'];
+let CATEGORIAS = [];
+let NCAT = 0;
+let catOrden = 'desc';
 
 let estaciones = [];
 let mapZona = 'todas', mapPeriodo = 'dia', mpPeriodo = 'dia';
@@ -1478,58 +1495,65 @@ document.querySelectorAll('#sys-seg button').forEach(b=>{
 
 let catPeriodo = 'dia';
 let mesPrevioCat = null;
-let mesPrevioTx  = null;   // total exacto de transacciones de días previos del mes
+let mesPrevioTx  = null;
 const fmtVeh = n => n >= 1e6 ? (n/1e6).toFixed(2).replace('.',',') + ' M' : fmt(n);
 let _catVer = -1, _catVal = null;
 function vehiculosDiaPorCategoria(){
   if(_catVer === dataVer && _catVal) return _catVal;
   const tot = new Array(NCAT).fill(0);
   for(let s=0;s<estaciones.length;s++){
-    const turnos = estaciones[s].turnos;
+    const turnos = estaciones[s].turnos || [];
     for(let k=0;k<turnos.length;k++){
       const t = turnos[k];
-      if(!t.transacciones) continue;
-      const suma = t.categorias.reduce((a,b)=>a+b,0) || 1;
-      for(let i=0;i<NCAT;i++) tot[i] += t.transacciones * (t.categorias[i]/suma);
+      const cats = Array.isArray(t.categorias) ? t.categorias : [];
+      for(let i=0;i<NCAT;i++) tot[i] += Number(cats[i]) || 0;
     }
   }
   _catVer = dataVer; _catVal = tot;
   return tot;
 }
 function vehiculosMesPorCategoria(dia){
-  const prev = (Array.isArray(mesPrevioCat) && mesPrevioCat.length === NCAT) ? mesPrevioCat : new Array(NCAT).fill(0);
-  return dia.map((v,i) => v + prev[i]);
+  const prev = Array.isArray(mesPrevioCat) ? mesPrevioCat : [];
+  return dia.map((v,i) => v + (Number(prev[i]) || 0));
 }
-
 function renderCategorias(){
   const dia = vehiculosDiaPorCategoria();
   const datos = catPeriodo === 'mes' ? vehiculosMesPorCategoria(dia) : dia;
-  const total = datos.reduce((a,b)=>a+b,0) || 1;
+  const totalReal = datos.reduce((a,b)=>a+b,0);
+  const total = totalReal || 1;
+  const indices = CATEGORIAS.map((_,i)=>i).sort((a,b)=>
+    catOrden === 'desc' ? datos[b]-datos[a] : datos[a]-datos[b]
+  );
   const R = 78, C = 2*Math.PI*R;
   let svg = '', offset = 0;
-  for(let i=0;i<NCAT;i++){
+  for(const i of indices){
     const len = (datos[i]/total)*C;
-    svg += `<circle cx="100" cy="100" r="${R}" class="donut-seg" stroke="${CATEGORIAS[i].color}" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-offset}"/>`;
+    if(len > 0) svg += `<circle cx="100" cy="100" r="${R}" class="donut-seg" stroke="${CATEGORIAS[i].color}" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-offset}"/>`;
     offset += len;
   }
   DOM.donutSvg.innerHTML = svg;
-  DOM.donutTotal.textContent = fmtVeh(total);
-  DOM.donutLbl.textContent = catPeriodo === 'mes' ? 'Mes' : 'Hoy';
-  let lg = '';
-  for(let i=0;i<NCAT;i++){
-    const pct = (datos[i]/total)*100;
-    lg += `<div class="cat-lg" title="${CATEGORIAS[i].nombre}: ${fmt(datos[i])} vehículos">` +
-          `<span class="dot" style="background:${CATEGORIAS[i].color}"></span>` +
-          `<span class="nm">${CATEGORIAS[i].nombre}</span>` +
-          `<span class="cn">${fmtVeh(datos[i])}</span>` +
-          `<span class="vl">${pct.toFixed(0)}%</span></div>`;
-  }
-  DOM.catLegend.innerHTML = lg;
+  DOM.donutTotal.textContent = fmtVeh(totalReal);
+  DOM.donutLbl.textContent = catPeriodo === 'mes' ? 'Mes' : 'Día';
+  DOM.catLegend.innerHTML = indices.length ? indices.map(i=>{
+    const pct = totalReal > 0 ? (datos[i]/totalReal)*100 : 0;
+    return `<div class="cat-lg" title="${CATEGORIAS[i].nombre}: ${fmt(datos[i])} vehículos">` +
+      `<span class="dot" style="background:${CATEGORIAS[i].color}"></span>` +
+      `<span class="nm">${CATEGORIAS[i].nombre}</span>` +
+      `<span class="cn">${fmtVeh(datos[i])}</span>` +
+      `<span class="vl">${pct.toFixed(0)}%</span></div>`;
+  }).join('') : '<div class="modal-empty">No hay categorías configuradas en la hoja Registro.</div>';
 }
 document.querySelectorAll('#cat-seg button').forEach(b=>{
   b.addEventListener('click', ()=>{
     catPeriodo = b.dataset.p;
     document.querySelectorAll('#cat-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderCategorias();
+  });
+});
+document.querySelectorAll('#cat-sort-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    catOrden = b.dataset.sort;
+    document.querySelectorAll('#cat-sort-seg button').forEach(x=>x.classList.toggle('active', x===b));
     renderCategorias();
   });
 });
@@ -1645,6 +1669,14 @@ function renderKPIs(){
   renderKPIsExtra();
 }
 
+let sobrePeriodo = 'dia';
+document.querySelectorAll('#sobre-seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    sobrePeriodo = b.dataset.p;
+    document.querySelectorAll('#sobre-seg button').forEach(x=>x.classList.toggle('active', x===b));
+    renderKPIsExtra();
+  });
+});
 function renderKPIsExtra(){
   const n = estaciones.length;
   const fracEsp = Math.max(0.02, fracDiaActual());
@@ -1653,7 +1685,9 @@ function renderKPIsExtra(){
     const st = estaciones[i];
     const rec = recaudacionDia(st), meta = metaEstacion(st, 'dia');
     totHoy += rec; totAyer += st.ayerBase;
-    const ratio = meta > 0 ? rec/(meta*fracEsp) : 1;
+    const ratio = sobrePeriodo === 'mes'
+      ? cumplimiento(st, 'mes') / 100
+      : (meta > 0 ? rec/(meta*fracEsp) : 0);
     if(ratio >= 1) sobre++; else if(ratio < 0.9) rezag++;
     if(metaEstacion(st, mpPeriodo) <= 0) continue;
     const pct = cumplimiento(st, mpPeriodo), rc = recaudacionDia(st);
@@ -1672,6 +1706,7 @@ function renderKPIsExtra(){
   boxS.classList.remove('k-green','k-red','k-amber');
   boxS.classList.add(estS === 'ok' ? 'k-green' : estS === 'warn' ? 'k-amber' : 'k-red');
   $('kpi-sobre').innerHTML = sobre + ' <small>de ' + n + ' cumplen</small>';
+  $('kpi-sobre-box').querySelector('.label span').textContent = 'Estaciones en meta · ' + (sobrePeriodo === 'mes' ? 'mes' : 'día');
   const barS = $('kpi-sobre-bar');
   barS.style.width = (frac*100).toFixed(1) + '%';
   barS.className = estS;
@@ -1741,7 +1776,7 @@ function renderMesBadge(){
   const mes = DTF_MES.format(VISTA.fecha);
   document.title = 'CONTROL DE PEAJE REGIONAL SANTA CRUZ · ' + mes;
   const lb = $('mes-label');
-  if(lb) lb.textContent = VISTA.actual ? 'Información del mes en curso ·' : 'Información histórica ·';
+  if(lb) lb.textContent = VISTA.actual ? 'Periodo actual' : 'Histórico';
   const kd = $('lbl-kpi-dia');
   if(kd) kd.textContent = VISTA.actual ? 'Recaudación del día' : 'Recaudación · ' + String(VISTA.dia).padStart(2,'0') + '/' + String(VISTA.m+1).padStart(2,'0');
 }
@@ -1805,16 +1840,9 @@ function fracMesActual(){
   return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
 }
 function initMesEstaciones(){
-  const fd = fracDiaActual();
+  // Solo se suman importes reales recibidos desde la planilla; no se estiman ni inventan valores.
   let suma = 0;
-  estaciones.forEach(st=>{
-    const tieneValor = (st.mesPrevio !== undefined && st.mesPrevio !== null && st.mesPrevio !== 0);
-    if(!tieneValor){
-      const proy = fd > 0.05 ? recaudacionDia(st)/fd : metaEstacion(st,'dia');
-      st.mesPrevio = proy * Math.max(0, diasDelMes-1);
-    }
-    suma += st.mesPrevio;
-  });
+  estaciones.forEach(st => { suma += Number(st.mesPrevio) || 0; });
   mesPrevio = suma;
 }
 
@@ -2182,6 +2210,14 @@ async function cargarIndice(){
 
 function aplicarDatos(d){
   if(Array.isArray(d.fechas)) agregarFechas(d.fechas);
+  if(Array.isArray(d.categorias)){
+    CATEGORIAS = d.categorias.map((nombre,i)=>({
+      id:'C'+(i+1), nombre:String(nombre || ('Categoría '+(i+1))),
+      color:PALETA_CATEGORIAS[i % PALETA_CATEGORIAS.length]
+    }));
+    NCAT = CATEGORIAS.length;
+    _catVer = -1; _catVal = null;
+  }
   if(d.config && d.config.metaDia > 0) METAS.dia = d.config.metaDia;
   if(d.config && d.config.metaMes > 0) METAS.mes = d.config.metaMes;
 
@@ -2205,9 +2241,9 @@ function aplicarDatos(d){
       mesPrevioTx: Number(x.mesPrevTx) || 0,
       turnos: (x.turnos && x.turnos.length ? x.turnos : [0,0,0]).map(t => {
         const tx = t.tx || 0, rec = t.rec || 0;
-        const cats = (t.cats && t.cats.some(v => v > 0)) ? t.cats : CATEGORIAS.map(c => c.peso);
+        const cats = Array.isArray(t.cats) ? t.cats.map(v=>Number(v)||0) : [];
         return {
-          recaudacion: rec, transacciones: tx, ticketProm: tx ? rec/tx : 15,
+          recaudacion: rec, transacciones: tx, ticketProm: tx ? rec/tx : 0,
           reportado: t.estado || 'pendiente', categorias: cats
         };
       }),
@@ -2223,47 +2259,10 @@ function aplicarDatos(d){
     actualizarIconos();
   }
 
-  if(sumaMes === 0 && Array.isArray(d.dias) && d.dias.length > 0 && VISTA.fecha){
-    const fRef = VISTA.fecha;
-    const inicioMesTime = new Date(fRef.getFullYear(), fRef.getMonth(), 1).getTime();
-    const hoyTime = new Date(fRef.getFullYear(), fRef.getMonth(), fRef.getDate()).getTime();
-    let sumaDias = 0;
-    for(let i=0;i<d.dias.length;i++){
-      const z = d.dias[i];
-      if(!z || z.f == null) continue;
-      const p = String(z.f).split('-').map(Number);
-      if(!(p[0] > 0 && p[1] > 0 && p[2] > 0)) continue;
-      const t = new Date(p[0], p[1]-1, p[2]).getTime();
-      if(t >= inicioMesTime && t < hoyTime){
-        sumaDias += Number(z.rec) || 0;
-      }
-    }
-    if(sumaDias > 0){
-      sumaMes = sumaDias;
-      if(estaciones.length > 0){
-        let totalDia = 0;
-        for(let i=0;i<estaciones.length;i++){
-          const st = estaciones[i];
-          for(let k=0;k<st.turnos.length;k++) totalDia += st.turnos[k].recaudacion || 0;
-        }
-        if(totalDia > 0){
-          for(let i=0;i<estaciones.length;i++){
-            const st = estaciones[i];
-            let r = 0;
-            for(let k=0;k<st.turnos.length;k++) r += st.turnos[k].recaudacion || 0;
-            st.mesPrevio = sumaMes * (r / totalDia);
-          }
-        } else {
-          const each = sumaMes / estaciones.length;
-          for(let i=0;i<estaciones.length;i++) estaciones[i].mesPrevio = each;
-        }
-      }
-    }
-  }
 
   mesPrevio = sumaMes;
 
-  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT && (d.mesPrevCat.some(v => Number(v) > 0) || Number(d.v) >= 2)
+  mesPrevioCat = Array.isArray(d.mesPrevCat) && d.mesPrevCat.length === NCAT
     ? d.mesPrevCat.map(v => Number(v) || 0)
     : null;
   mesPrevioTx = (typeof d.mesPrevTx === 'number' && d.mesPrevTx >= 0)
