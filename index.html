@@ -21,7 +21,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --svg-bg: #0a0f15; --map-bg: #0f1218;
     --shadow: 0 6px 24px rgba(0,0,0,.7); --glass: rgba(5,7,10,.92);
-    --boundary-color: #06b6d4; /* NUEVO: celeste del límite en modo oscuro */
+    --boundary-color: #06b6d4;
   }
   [data-theme="light"] {
     --bg: #eeece3; --panel: #ffffff; --panel-2: #f6f4ec;
@@ -32,7 +32,7 @@
     --flag-red: #d52b1e; --flag-yellow: #f9c80e; --flag-green: #007934;
     --map-bg: #eaedf3; --shadow: 0 4px 14px rgba(30,40,30,.10);
     --glass: rgba(255,255,255,.93);
-    --boundary-color: #0e7490; /* NUEVO: celeste oscuro del límite en modo claro */
+    --boundary-color: #0e7490;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;width:100%;overflow:hidden;margin:0}
@@ -1292,12 +1292,9 @@ async function redVialDesdeSVG(){
       o.el.setAttribute('data-nx-road', '1');
     });
 
-    // *** NUEVO: Identificar y marcar las líneas del LÍMITE de Santa Cruz ***
-    // Primero intentamos con paths cerrados que coincidan con el color del límite.
+    // *** LÍMITE de Santa Cruz: marcar paths cerrados que coincidan con el color del límite ***
     let elementosLimite = info.filter(o => o.cerrado && rgbDist(o.rgb, limite) < 60);
     if(!elementosLimite.length){
-      // Fallback: si el límite no es un path cerrado, buscar paths abiertos con color de límite
-      // (distinto del color de las carreteras) para no confundirlos con vías.
       elementosLimite = info.filter(o => !o.cerrado && rgbDist(o.rgb, limite) < 60 && rgbDist(o.rgb, vial) > 60);
     }
     elementosLimite.forEach(o => o.el.setAttribute('data-nx-boundary', '1'));
@@ -1317,15 +1314,12 @@ async function redVialDesdeSVG(){
     };
     function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
 
-    // Fusionar todos los tramos en muy pocos <path> (agrupados por transformación y sentido).
-    // Antes había cientos de elementos animados: eso volvía lenta la página.
     const fmtN = v => Math.round(v*1e5)/1e5;
     carreteras.forEach(o => {
       try{
         const el = o.el, L0 = el.getTotalLength();
         const p0 = pt(el, 0), p1 = pt(el, L0);
         const a = aRaiz(el, p0.x, p0.y), b = aRaiz(el, p1.x, p1.y);
-        // si el final está más cerca del centro, se invierte para que fluya hacia afuera
         const rev = Math.hypot(b.x-cx, b.y-cy) < Math.hypot(a.x-cx, a.y-cy);
         const tag = el.tagName.toLowerCase();
         let d = '';
@@ -1354,8 +1348,7 @@ async function redVialDesdeSVG(){
 
   clone.querySelectorAll('style,script,foreignObject,title,desc,metadata').forEach(n=>n.remove());
 
-  // CSS del flujo: suave, continuo y sin efecto de pulso
-  const DUR = 2.6; // segundos por ciclo (más alto = más lento y suave)
+  const DUR = 2.6;
   const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
   styleEl.textContent = `
     .nx-flow-road{
@@ -1385,25 +1378,23 @@ async function redVialDesdeSVG(){
     .nx-lite .nx-flow-road{ animation:none !important; stroke-dasharray:none !important; stroke-opacity:.5 !important; }
     @keyframes moverFlujo{
       from{ stroke-dashoffset:0; }
-      to{ stroke-dashoffset:-28; } /* 6 + 22 = ciclo exacto, sin saltos */
+      to{ stroke-dashoffset:-28; }
     }
-    /* *** NUEVO: Límite de Santa Cruz más grueso y celeste *** */
+    /* *** LÍMITE de Santa Cruz: una sola línea sólida celeste oscuro *** */
     [data-nx-boundary="1"]{
-  fill: var(--boundary-color, #06b6d4) !important;
-  fill-opacity: 1 !important;
-  fill-rule: nonzero !important;
-  stroke: var(--boundary-color, #06b6d4) !important;
-  stroke-width: 4px !important;
-  stroke-opacity: 1 !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-  vector-effect: non-scaling-stroke !important;
+      fill: var(--boundary-color, #06b6d4) !important;
+      fill-opacity: 1 !important;
+      fill-rule: nonzero !important;
+      stroke: var(--boundary-color, #06b6d4) !important;
+      stroke-width: 4px !important;
+      stroke-opacity: 1 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      vector-effect: non-scaling-stroke !important;
     }
   `;
   clone.appendChild(styleEl);
 
-  // Quitar los tramos originales y dibujar solo los fusionados:
-  // por cada grupo, una línea base estática y una capa animada de puntos
   clone.querySelectorAll('[data-nx-road="1"]').forEach(n => n.remove());
   const SVGNS = 'http://www.w3.org/2000/svg';
   grupos.forEach(g => {
@@ -1429,7 +1420,6 @@ async function redVialDesdeSVG(){
   clone.removeAttribute('style');
   clone.setAttribute('class','nx-flow-svg');
 
-  // Opcional: aplicar colores de la leyenda si no se ha hecho
   if(!LEYENDA_MANUAL){
     LEG_COLORES = {limite, vial}; LEG_VECTOR = true;
     aplicarColoresLeyenda(document.documentElement.getAttribute('data-theme'), mapProcesadoActivo);
@@ -1800,7 +1790,7 @@ document.querySelectorAll('#cat-sort-seg button').forEach(b=>{
 
 let turnoPeriodo = 'dia';
 let sysPeriodo = 'dia';
-const TURNO_W = [1/3, 1/3, 1/3];   // el API lo sobrescribe con mesPrevTurno
+const TURNO_W = [1/3, 1/3, 1/3];
 
 function renderTurnos(){
   if(mesPrevio === null) initMesEstaciones();
@@ -2038,7 +2028,6 @@ function renderRefreshStatus(now = Date.now()) {
   const segundos = Math.ceil(falta / 1000);
   label.textContent = `Actualiza en ${String(Math.floor(segundos/60)).padStart(2,'0')}:${String(segundos%60).padStart(2,'0')}`;
   bar.style.width = `${Math.min(100, Math.max(0, 100 - (falta / API_REFRESH_MS * 100)))}%`;
-  // Salvaguarda: si el contador llegó a cero, dispara la consulta sin esperar otro ciclo.
   if(segundos === 0 && !apiActualizando && !cambiandoFecha) queueMicrotask(() => {
     if(VISTA.actual && !apiActualizando && !cambiandoFecha && Date.now() >= API_EST.prox) actualizarDesdeApi();
   });
@@ -2091,7 +2080,6 @@ document.addEventListener('visibilitychange', async ()=>{
 
 /* ==========================================================
    META VS REAL
-   (las metas se editan en la hoja Config de la planilla)
    ========================================================== */
 const METAS = {dia:3000000, mes:90000000};
 let mesPrevio = null;
@@ -2108,7 +2096,6 @@ function fracMesActual(){
   return (diasDelMes - 1 + fracDiaActual()) / VISTA.diasMes;
 }
 function initMesEstaciones(){
-  // Solo se suman importes reales recibidos desde la planilla; no se estiman ni inventan valores.
   let suma = 0;
   estaciones.forEach(st => { suma += Number(st.mesPrevio) || 0; });
   mesPrevio = suma;
@@ -2371,8 +2358,6 @@ document.addEventListener('keydown', e=>{
 
 let idleTimer = null;
 document.addEventListener('mousemove', ()=>{
-  // Se conserva el cursor visible en pantalla completa para evitar el efecto
-  // de desaparición/reaparición que puede percibirse como un salto.
   const cl = document.body.classList;
   if(cl.contains('idle')) cl.remove('idle');
   clearTimeout(idleTimer);
