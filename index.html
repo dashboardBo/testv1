@@ -1291,6 +1291,17 @@ async function redVialDesdeSVG(){
       vector-effect:non-scaling-stroke !important;
       animation:moverFlujo ${DUR}s linear infinite !important;
     }
+    .nx-base-road{
+      fill:none !important;
+      stroke:#ffcc00 !important;
+      stroke-width:.7px !important;
+      stroke-opacity:.55 !important;
+      stroke-dasharray:none !important;
+      stroke-linecap:round !important;
+      stroke-linejoin:round !important;
+      vector-effect:non-scaling-stroke !important;
+      animation:none !important;
+    }
     .nx-flow-road.nx-rev{ animation-direction:reverse !important; }
     @keyframes moverFlujo{
       from{ stroke-dashoffset:0; }
@@ -1305,6 +1316,10 @@ async function redVialDesdeSVG(){
       const rev = el.getAttribute('data-nx-rev') === '1';
       const ph  = parseFloat(el.getAttribute('data-nx-ph')) || 0;
       ['style','stroke-width','stroke-dasharray','stroke-opacity','class','filter','data-nx-road','data-nx-rev','data-nx-ph'].forEach(a=>el.removeAttribute(a));
+      // línea base estática y delgada, del mismo color, debajo de los puntos en movimiento
+      const base = el.cloneNode(false);
+      base.setAttribute('class', 'nx-base-road');
+      el.parentNode.insertBefore(base, el);
       el.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
       // desfase según la distancia al centro: evita que todo "lata" al mismo tiempo
       el.style.animationDelay = (-(ph / maxPh) * DUR).toFixed(2) + 's';
