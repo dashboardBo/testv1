@@ -1113,9 +1113,7 @@ function applyMapTheme(theme){
   mapOverlay = L.imageOverlay(MAP_SRC, DEPT_BOUNDS, {
     interactive: false,
     opacity: 1,
-    className: (theme === 'light' && !mapSrcTransparent)
-      ? 'map-svg-fallback'
-      : 'map-svg-native'
+    className: theme === 'light' ? 'map-svg-fallback' : 'map-svg-native'
   }).addTo(map);
 
   requestAnimationFrame(() => map.invalidateSize({pan:false}));
@@ -1198,7 +1196,8 @@ async function redVialDesdeSVG(){
   host.appendChild(live);
   document.body.appendChild(host);
 
-  let clone = null, vial = null, limite = null, maxPh = 1;
+  let clone = null, vial = null, limite = null;
+  const grupos = new Map();
 
   try{
     const SKIP = 'defs,clipPath,mask,symbol,marker,pattern';
@@ -1253,21 +1252,35 @@ async function redVialDesdeSVG(){
     };
     function pt(el, l){ const q = el.getPointAtLength(l); return {x:q.x, y:q.y}; }
 
-    // Orientar cada tramo para que fluya del centro hacia afuera
-    // y guardar su distancia al centro para desfasar la animación
+    // Fusionar todos los tramos en muy pocos <path> (agrupados por transformación y sentido).
+    // Antes había cientos de elementos animados: eso volvía lenta la página.
+    const fmtN = v => Math.round(v*1e5)/1e5;
     carreteras.forEach(o => {
       try{
         const el = o.el, L0 = el.getTotalLength();
         const p0 = pt(el, 0), p1 = pt(el, L0);
         const a = aRaiz(el, p0.x, p0.y), b = aRaiz(el, p1.x, p1.y);
-        const da = Math.hypot(a.x-cx, a.y-cy), db = Math.hypot(b.x-cx, b.y-cy);
         // si el final está más cerca del centro, se invierte para que fluya hacia afuera
-        if(db < da) el.setAttribute('data-nx-rev', '1');
-        const d = Math.min(da, db);
-        el.setAttribute('data-nx-ph', d.toFixed(1));
-        if(d > maxPh) maxPh = d;
+        const rev = Math.hypot(b.x-cx, b.y-cy) < Math.hypot(a.x-cx, a.y-cy);
+        const tag = el.tagName.toLowerCase();
+        let d = '';
+        if(tag === 'path') d = (el.getAttribute('d') || '').trim().replace(/^m/, 'M');
+        else if(tag === 'line') d = 'M' + (el.getAttribute('x1')||0) + ' ' + (el.getAttribute('y1')||0) + 'L' + (el.getAttribute('x2')||0) + ' ' + (el.getAttribute('y2')||0);
+        else if(tag === 'polyline'){
+          const n = (el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number).filter(v => isFinite(v));
+          for(let i=0;i+1<n.length;i+=2) d += (i ? 'L' : 'M') + n[i] + ' ' + n[i+1];
+        }
+        if(!d) return;
+        let tr = '';
+        const sc = el.getScreenCTM();
+        if(rootInv && sc){ const m = rootInv.multiply(sc); tr = 'matrix(' + [m.a,m.b,m.c,m.d,m.e,m.f].map(fmtN).join(' ') + ')'; }
+        const key = tr + '|' + (rev ? 1 : 0);
+        let g = grupos.get(key);
+        if(!g){ g = {tr, rev, d:[]}; grupos.set(key, g); }
+        g.d.push(d);
       }catch(e){}
     });
+
 
     clone = live.cloneNode(true);
   } finally {
@@ -1296,13 +1309,15 @@ async function redVialDesdeSVG(){
       stroke:#ffcc00 !important;
       stroke-width:.7px !important;
       stroke-opacity:.55 !important;
-      stroke-dasharray:none !important;
       stroke-linecap:round !important;
       stroke-linejoin:round !important;
       vector-effect:non-scaling-stroke !important;
-      animation:none !important;
     }
+    [data-theme="light"] .nx-flow-road,
+    [data-theme="light"] .nx-base-road{ stroke:#b45309 !important; }
     .nx-flow-road.nx-rev{ animation-direction:reverse !important; }
+    .nx-pausa .nx-flow-road{ animation-play-state:paused !important; }
+    .nx-lite .nx-flow-road{ animation:none !important; stroke-dasharray:none !important; stroke-opacity:.5 !important; }
     @keyframes moverFlujo{
       from{ stroke-dashoffset:0; }
       to{ stroke-dashoffset:-28; } /* 6 + 22 = ciclo exacto, sin saltos */
@@ -1310,20 +1325,21 @@ async function redVialDesdeSVG(){
   `;
   clone.appendChild(styleEl);
 
-  // Aplicar las clases de animación solo a los tramos marcados
-  clone.querySelectorAll('path,polyline,line').forEach(el=>{
-    if(el.getAttribute('data-nx-road') === '1'){
-      const rev = el.getAttribute('data-nx-rev') === '1';
-      const ph  = parseFloat(el.getAttribute('data-nx-ph')) || 0;
-      ['style','stroke-width','stroke-dasharray','stroke-opacity','class','filter','data-nx-road','data-nx-rev','data-nx-ph'].forEach(a=>el.removeAttribute(a));
-      // línea base estática y delgada, del mismo color, debajo de los puntos en movimiento
-      const base = el.cloneNode(false);
-      base.setAttribute('class', 'nx-base-road');
-      el.parentNode.insertBefore(base, el);
-      el.setAttribute('class', rev ? 'nx-flow-road nx-rev' : 'nx-flow-road');
-      // desfase según la distancia al centro: evita que todo "lata" al mismo tiempo
-      el.style.animationDelay = (-(ph / maxPh) * DUR).toFixed(2) + 's';
-    }
+  // Quitar los tramos originales y dibujar solo los fusionados:
+  // por cada grupo, una línea base estática y una capa animada de puntos
+  clone.querySelectorAll('[data-nx-road="1"]').forEach(n => n.remove());
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  grupos.forEach(g => {
+    const d = g.d.join(' ');
+    const mk = cls => {
+      const p = document.createElementNS(SVGNS, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('class', cls);
+      if(g.tr) p.setAttribute('transform', g.tr);
+      return p;
+    };
+    clone.appendChild(mk('nx-base-road'));
+    clone.appendChild(mk(g.rev ? 'nx-flow-road nx-rev' : 'nx-flow-road'));
   });
 
   if(!clone.getAttribute('viewBox')){
